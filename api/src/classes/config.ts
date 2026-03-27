@@ -3,6 +3,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
+import { sshEnvForGit } from './sshKey';
+
 // --------------------------------------------- Config ---------------------------------------------
 
 function optional(name: string, fallback = ''): string {
@@ -58,6 +60,7 @@ export const config = {
       env['GIT_AUTHOR_EMAIL'] = gitOverrides.email;
       env['GIT_COMMITTER_EMAIL'] = gitOverrides.email;
     }
+    Object.assign(env, sshEnvForGit(configDir));
     return env;
   }
 };

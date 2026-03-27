@@ -18,6 +18,7 @@ import {
 } from '../classes/config';
 import type { McpClientServerConfig } from '../classes/config';
 import { getCursorModels } from '../classes/cursorModels';
+import { readSshKeyMaterial } from '../classes/sshKey';
 import { cursorAuthenticated } from './agentAuth';
 
 const AppSettingsSchema = Type.Object({
@@ -27,11 +28,32 @@ const AppSettingsSchema = Type.Object({
   autoTheme: Type.Boolean(),
   darkTheme: Type.String(),
   lightTheme: Type.String(),
-  modelSelection: Type.String()
+  modelSelection: Type.String(),
+  /** SSH public key (e.g. register on GitHub/GitLab) — persisted under config volume `.ssh/` */
+  sshPublicKey: Type.String(),
+  /** Private key for the same pair — treat as a secret */
+  sshPrivateKey: Type.String()
 });
 
 export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
   const fastifyInstance = fastify.withTypeProvider<TypeBoxTypeProvider>();
+
+  const appSettingsFromUser = (
+    user: { gitUserName: string | null; gitUserEmail: string | null; theme: string | null; autoTheme: boolean | null; darkTheme: string | null; lightTheme: string | null; modelSelection: string | null } | null
+  ) => {
+    const ssh = readSshKeyMaterial(config.configDir);
+    return {
+      gitUserName: user?.gitUserName ?? null,
+      gitUserEmail: user?.gitUserEmail ?? null,
+      theme: user?.theme ?? 'infrared',
+      autoTheme: user?.autoTheme ?? false,
+      darkTheme: user?.darkTheme ?? 'infrared',
+      lightTheme: user?.lightTheme ?? 'cloud',
+      modelSelection: user?.modelSelection ?? 'auto',
+      sshPublicKey: ssh.sshPublicKey,
+      sshPrivateKey: ssh.sshPrivateKey
+    };
+  };
 
   fastifyInstance.get(
     '/api/settings',
@@ -44,15 +66,7 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
       const user =
         (await db.getUserById(request.jwtUser!.id)) ??
         (await db.getUserByUsername(request.jwtUser!.username));
-      return {
-        gitUserName: user?.gitUserName ?? null,
-        gitUserEmail: user?.gitUserEmail ?? null,
-        theme: user?.theme ?? 'infrared',
-        autoTheme: user?.autoTheme ?? false,
-        darkTheme: user?.darkTheme ?? 'infrared',
-        lightTheme: user?.lightTheme ?? 'cloud',
-        modelSelection: user?.modelSelection ?? 'auto'
-      };
+      return appSettingsFromUser(user);
     }
   );
 
@@ -107,15 +121,7 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
         throw new Error('Failed to update user');
       }
 
-      return {
-        gitUserName: user.gitUserName ?? null,
-        gitUserEmail: user.gitUserEmail ?? null,
-        theme: user.theme ?? 'infrared',
-        autoTheme: user.autoTheme ?? false,
-        darkTheme: user.darkTheme ?? 'infrared',
-        lightTheme: user.lightTheme ?? 'cloud',
-        modelSelection: user.modelSelection ?? 'auto'
-      };
+      return appSettingsFromUser(user);
     }
   );
 

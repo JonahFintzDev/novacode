@@ -84,6 +84,10 @@ export interface AppSettings {
   darkTheme: string;
   lightTheme: string;
   modelSelection: string;
+  /** ed25519 public key — add to your Git host for SSH git access */
+  sshPublicKey: string;
+  /** Same keypair’s private key — secret; stored on server config volume */
+  sshPrivateKey: string;
 }
 
 export interface McpClientServer {

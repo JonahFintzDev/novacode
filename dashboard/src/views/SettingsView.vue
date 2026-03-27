@@ -51,6 +51,10 @@ const authTerminalRef = ref<InstanceType<typeof AppTerminal> | null>(null);
 const gitForm = ref<{ name: string; email: string }>({ name: '', email: '' });
 const bSavingGit = ref<boolean>(false);
 const bGitSaved = ref<boolean>(false);
+const sshPublicKey = ref<string>('');
+const sshPrivateKey = ref<string>('');
+const bCopiedSshPublic = ref<boolean>(false);
+const bCopiedSshPrivate = ref<boolean>(false);
 
 const activeThemeId = ref<string>(localStorage.getItem('theme') ?? DEFAULT_THEME_ID);
 const bAutoTheme = ref<boolean>(localStorage.getItem('autoTheme') === 'true');
@@ -232,6 +236,8 @@ const loadSettings = async (): Promise<void> => {
       activeThemeId.value = response.data.theme;
       localStorage.setItem('theme', response.data.theme);
     }
+    sshPublicKey.value = response.data.sshPublicKey ?? '';
+    sshPrivateKey.value = response.data.sshPrivateKey ?? '';
     if (bAutoTheme.value) {
       applyTheme(resolveAutoTheme());
       startAutoThemeWatcher();
@@ -243,14 +249,42 @@ const loadSettings = async (): Promise<void> => {
   }
 };
 
+const copySshPublic = async (): Promise<void> => {
+  if (!sshPublicKey.value) return;
+  try {
+    await navigator.clipboard.writeText(sshPublicKey.value);
+    bCopiedSshPublic.value = true;
+    setTimeout(() => {
+      bCopiedSshPublic.value = false;
+    }, 2000);
+  } catch {
+    // ignore
+  }
+};
+
+const copySshPrivate = async (): Promise<void> => {
+  if (!sshPrivateKey.value) return;
+  try {
+    await navigator.clipboard.writeText(sshPrivateKey.value);
+    bCopiedSshPrivate.value = true;
+    setTimeout(() => {
+      bCopiedSshPrivate.value = false;
+    }, 2000);
+  } catch {
+    // ignore
+  }
+};
+
 const saveGitSettings = async (): Promise<void> => {
   bSavingGit.value = true;
   bGitSaved.value = false;
   try {
-    await settingsApi.update({
+    const res = await settingsApi.update({
       gitUserName: gitForm.value.name.trim() || null,
       gitUserEmail: gitForm.value.email.trim() || null
     });
+    sshPublicKey.value = res.data.sshPublicKey ?? '';
+    sshPrivateKey.value = res.data.sshPrivateKey ?? '';
     bGitSaved.value = true;
     setTimeout(() => {
       bGitSaved.value = false;
@@ -928,6 +962,68 @@ onMounted((): void => {
                 Save
               </button>
               <span v-if="bGitSaved" class="text-xs text-success">Saved.</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- SSH key (Docker / server identity for git push) -->
+        <div>
+          <h2 class="text-sm font-semibold text-text-muted uppercase tracking-widest mb-5">
+            SSH key for Git remotes
+          </h2>
+          <p class="text-sm text-text-muted -mt-3 mb-5">
+            On first startup the server creates an ed25519 keypair under your config volume (
+            <code
+              class="bg-fg/[0.06] border border-fg/[0.08] px-1.5 py-0.5 rounded text-text-primary font-mono text-[11px]"
+              >.ssh/id_ed25519</code
+            >
+            ). Add the <strong class="text-text-primary font-medium">public</strong> key to your
+            Git host (GitHub, GitLab, Gitea, etc.) so
+            <code
+              class="bg-fg/[0.06] border border-fg/[0.08] px-1.5 py-0.5 rounded font-mono text-[11px]"
+              >git push</code
+            >
+            over SSH works from the container. The private key is shown only here — protect it like
+            any deploy key.
+          </p>
+          <div class="space-y-4">
+            <div class="bg-fg/[0.02] border border-fg/[0.07] rounded-xl p-5">
+              <div class="flex items-center justify-between gap-2 mb-2">
+                <label class="text-sm font-medium text-text-primary">Public key</label>
+                <button
+                  type="button"
+                  class="text-xs font-medium px-3 py-1.5 rounded-lg border border-fg/[0.12] bg-fg/[0.05] hover:bg-fg/[0.09] text-text-primary transition-colors disabled:opacity-40"
+                  :disabled="!sshPublicKey"
+                  @click="copySshPublic"
+                >
+                  {{ bCopiedSshPublic ? 'Copied' : 'Copy' }}
+                </button>
+              </div>
+              <pre
+                class="text-xs font-mono text-text-muted whitespace-pre-wrap break-all bg-fg/[0.05] border border-fg/[0.08] rounded-lg px-3 py-2.5 min-h-[2.5rem]"
+                >{{ sshPublicKey || '—' }}</pre
+              >
+            </div>
+            <div class="bg-fg/[0.02] border border-fg/[0.07] rounded-xl p-5">
+              <div class="flex items-center justify-between gap-2 mb-2">
+                <label class="text-sm font-medium text-text-primary">Private key</label>
+                <button
+                  type="button"
+                  class="text-xs font-medium px-3 py-1.5 rounded-lg border border-fg/[0.12] bg-fg/[0.05] hover:bg-fg/[0.09] text-text-primary transition-colors disabled:opacity-40"
+                  :disabled="!sshPrivateKey"
+                  @click="copySshPrivate"
+                >
+                  {{ bCopiedSshPrivate ? 'Copied' : 'Copy' }}
+                </button>
+              </div>
+              <pre
+                class="text-xs font-mono text-text-muted whitespace-pre-wrap break-all bg-fg/[0.05] border border-fg/[0.08] rounded-lg px-3 py-2.5 min-h-[2.5rem] max-h-48 overflow-y-auto"
+                >{{ sshPrivateKey || '—' }}</pre
+              >
+              <p class="text-xs text-warning mt-2">
+                Anyone with this key can push as you to any host that trusts the public key. Do not
+                share it.
+              </p>
             </div>
           </div>
         </div>

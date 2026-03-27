@@ -31,6 +31,7 @@ import { startAutomationScheduler, stopAutomationScheduler } from './classes/aut
 import { imageRoutes } from './routes/images';
 import { pushRoutes } from './routes/push';
 import { ensureVapidKeys } from './classes/push';
+import { ensureSshKey } from './classes/sshKey';
 
 const startTime = Date.now();
 
@@ -41,6 +42,7 @@ const BODY_LIMIT_BYTES = 25 * 1024 * 1024;
 
 async function main(): Promise<void> {
   ensureVapidKeys();
+  ensureSshKey(config.configDir);
 
   const fastify = Fastify({ bodyLimit: BODY_LIMIT_BYTES });
 

@@ -11,7 +11,7 @@ RUN curl -LsSf https://mistral.ai/vibe/install.sh | bash
 
 # install gosu and other base tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git curl bash gosu \
+    git curl bash gosu openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
 ENV PATH="/usr/local/bin:${PATH}"

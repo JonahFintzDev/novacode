@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # NovaCode one-line installer / updater (install vs update is detected automatically).
 #
-#   curl -fsSL https://raw.githubusercontent.com/JonahFintzDev/novacode/main/app/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/JonahFintzDev/novacode/main/scripts/install.sh | bash
 #
 # If ~/.novacode/.env exists → updates (refetch compose, pull images, recreate). Otherwise → fresh install.
 #
-# Override the raw GitHub base for fetched files (must be the app/ tree: contains scripts/ and .env.example):
-#   export NOVACODE_INSTALL_BASE_URL="https://raw.githubusercontent.com/JonahFintzDev/novacode/main/app"
+# Override the raw GitHub base for fetched files (repo root: contains scripts/ and .env.example):
+#   export NOVACODE_INSTALL_BASE_URL="https://raw.githubusercontent.com/JonahFintzDev/novacode/main"
 #
 set -euo pipefail
 
@@ -18,7 +18,7 @@ NOVACODE_POSTGRES_DATA="${NOVACODE_DIR}/postgres-data"
 NOVACODE_IMAGE_DEFAULT="${NOVACODE_IMAGE:-novacode/novacode:latest}"
 
 # Base URL for fetching docker-compose.install.yml (no trailing slash).
-NOVACODE_INSTALL_BASE_URL="${NOVACODE_INSTALL_BASE_URL:-https://raw.githubusercontent.com/JonahFintzDev/novacode/main/app}"
+NOVACODE_INSTALL_BASE_URL="${NOVACODE_INSTALL_BASE_URL:-https://raw.githubusercontent.com/JonahFintzDev/novacode/main}"
 
 COMPOSE_REL_PATH="scripts/docker-compose.install.yml"
 COMPOSE_FETCH_URL="${NOVACODE_INSTALL_BASE_URL}/${COMPOSE_REL_PATH}"
@@ -32,6 +32,24 @@ COMPOSE_DOC_URL="https://docs.docker.com/compose/install/"
 die() {
   echo "error: $*" >&2
   exit 1
+}
+
+ensure_writable_install_root() {
+  if [[ -e "$NOVACODE_DIR" ]]; then
+    if [[ ! -d "$NOVACODE_DIR" ]]; then
+      die "${NOVACODE_DIR} exists but is not a directory"
+    fi
+    if [[ ! -w "$NOVACODE_DIR" ]]; then
+      die "cannot write to ${NOVACODE_DIR} — fix ownership (e.g. sudo chown -R \"$(id -un):$(id -gn)\" \"${NOVACODE_DIR}\")"
+    fi
+  else
+    local parent
+    parent="$(dirname "$NOVACODE_DIR")"
+    if [[ ! -d "$parent" ]] || [[ ! -w "$parent" ]]; then
+      die "cannot create ${NOVACODE_DIR}: parent directory ${parent} is missing or not writable"
+    fi
+    mkdir -p "$NOVACODE_DIR" || die "cannot create ${NOVACODE_DIR}"
+  fi
 }
 
 require_docker() {
@@ -284,6 +302,7 @@ is_installed() {
 
 cmd_run() {
   require_docker
+  ensure_writable_install_root
   mkdir -p "$NOVACODE_CONFIG" "$NOVACODE_POSTGRES_DATA"
 
   if is_installed; then

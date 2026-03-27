@@ -11,6 +11,7 @@ import path from 'node:path';
 import { jwtPreHandler } from '../classes/auth';
 import { db } from '../classes/database';
 import { config } from '../classes/config';
+import { sshEnvForGit } from '../classes/sshKey';
 
 const execFileAsync = promisify(execFile);
 
@@ -32,6 +33,7 @@ function gitEnv(workspace: {
 }): Record<string, string> {
   const env: Record<string, string> = { ...(process.env as Record<string, string>) };
   env['HOME'] = config.configDir;
+  Object.assign(env, sshEnvForGit(config.configDir));
   if (workspace.gitUserName) {
     env['GIT_AUTHOR_NAME'] = workspace.gitUserName;
     env['GIT_COMMITTER_NAME'] = workspace.gitUserName;

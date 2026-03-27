@@ -69,7 +69,7 @@ Run [Cursor Agent](https://cursor.com) and [Claude Code](https://claude.ai/code)
 For a **published Docker image** under `~/.novacode` (install and updates use the same command):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/JonahFintzDev/novacode/main/app/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/JonahFintzDev/novacode/main/scripts/install.sh | bash
 ```
 
 **Prerequisites:** Docker with Compose (`docker compose` or `docker-compose`), and `openssl` on first install.
@@ -79,7 +79,7 @@ The script writes `~/.novacode/.env` with generated secrets, pulls `novacode/nov
 | Variable | Purpose |
 |----------|---------|
 | `NOVACODE_DIR` | Install root (default: `~/.novacode`) |
-| `NOVACODE_INSTALL_BASE_URL` | Raw URL of the repo’s `app/` folder for fetched compose and `.env.example` (see `scripts/install.sh`) |
+| `NOVACODE_INSTALL_BASE_URL` | Raw URL of the repo root for fetched compose and `.env.example` (see `scripts/install.sh`) |
 | `NOVACODE_IMAGE` | Image tag (default: `novacode/novacode:latest`) |
 
 On first install you may be prompted for extra host directory mounts (workspaces under `/data-root/...`). Then open **`http://localhost:3030`** and complete **first-run setup**.
@@ -87,9 +87,9 @@ On first install you may be prompted for extra host directory mounts (workspaces
 ### Docker Compose (build from source)
 
 ```bash
-# 1. Clone the repo (application code lives under app/ in the monorepo)
+# 1. Clone the application repository
 git clone https://github.com/JonahFintzDev/novacode.git
-cd novacode/app
+cd novacode
 
 # 2. Create your env file
 cp .env.example .env
@@ -182,6 +182,15 @@ volumes:
 ```
 
 Then use workspace paths like `projects/my-repo` or `work/client-site`.
+
+### Git push over SSH
+
+The API generates an **ed25519** SSH keypair on startup (under `/config/.ssh/` on the config volume) if it is not already present, and configures Git to use it for SSH remotes. To push from the UI or agents:
+
+1. Open **Settings → Git** and copy the **public** key into your Git host (GitHub, GitLab, Gitea, etc.).
+2. Ensure the remote uses an **SSH** URL (for example `git@github.com:org/repo.git`). HTTPS remotes use the host’s credential helper, not this key.
+
+The same screen lists the **private** key for advanced setups (treat it as a secret). Keys persist in `~/.novacode/config/.ssh/` on the host with the stock compose file.
 
 ---
 
