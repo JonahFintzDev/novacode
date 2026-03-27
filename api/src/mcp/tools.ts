@@ -1,5 +1,5 @@
 // classes
-import { db } from '../classes/database';
+import { db, normalizeTagStringList } from '../classes/database';
 import { createSessionWithAgent } from '../classes/sessionService';
 import {
   dispatchPrompt,
@@ -105,7 +105,8 @@ export async function createSession(
   args: {
     workspaceId?: string;
     name?: string;
-    tags?: string | null;
+    /** Single tag, comma-separated labels, or a list (same as dashboard). */
+    tags?: string | string[] | null;
   }
 ): Promise<ToolResult> {
   const workspaceId = args?.workspaceId;
@@ -114,10 +115,21 @@ export async function createSession(
   const wid = await ensureWorkspace(workspaceId);
   if (!wid) return err('Workspace not found');
 
+  let tags: string[] | null = null;
+  const raw = args?.tags;
+  if (raw != null) {
+    if (Array.isArray(raw)) {
+      tags = normalizeTagStringList(raw);
+    } else if (typeof raw === 'string') {
+      const t = raw.trim();
+      tags = t ? normalizeTagStringList(t.split(',').map((s) => s.trim())) : null;
+    }
+  }
+
   const result = await createSessionWithAgent({
     workspaceId: wid,
     name,
-    tags: args?.tags ?? null
+    tags: tags && tags.length > 0 ? tags : null
   });
   if (result.error) return err(result.error);
   return ok(JSON.stringify(result.session, null, 2));

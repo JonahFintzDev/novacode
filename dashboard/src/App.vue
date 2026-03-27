@@ -96,7 +96,7 @@ onUnmounted((): void => {
   <div class="flex flex-col app-shell">
     <AppLayout v-if="bShowNavBar" />
     <template v-else>
-      <RouterView> </RouterView>
+      <RouterView class="flex min-h-0 flex-1 flex-col" />
     </template>
   </div>
 </template>

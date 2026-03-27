@@ -73,12 +73,23 @@ function validateAndNormalizeWorkspacePath(path: string): string {
   return pathRelativeToRoot.replace(/\/$/, '') || '.';
 }
 
-/** Normalize workspace for API response: ensure tags is string[] | null. */
+/** Normalize workspace for API response: ensure tags is string[] | null (no empty strings). */
 function normalizeWorkspaceResponse<T extends { tags?: unknown }>(w: T): Omit<T, 'tags'> & { tags: string[] | null } {
-  const tags = Array.isArray(w.tags)
-    ? (w.tags.filter((t): t is string => typeof t === 'string') as string[])
-    : null;
-  return { ...w, tags };
+  if (!Array.isArray(w.tags)) {
+    return { ...w, tags: null };
+  }
+  const seen = new Set<string>();
+  const tags: string[] = [];
+  for (const x of w.tags) {
+    if (typeof x !== 'string') continue;
+    const t = x.trim();
+    if (!t) continue;
+    const k = t.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    tags.push(t);
+  }
+  return { ...w, tags: tags.length > 0 ? tags : null };
 }
 
 const WORKSPACE_AGENT_TYPES = new Set(['cursor-agent', 'claude']);

@@ -2,7 +2,7 @@
 import type { FastifyInstance } from 'fastify';
 
 // classes
-import { db } from '../classes/database';
+import { db, normalizeTagStringList } from '../classes/database';
 import { createSessionWithAgent } from '../classes/sessionService';
 import { dispatchPrompt, dispatchPromptAndWait } from '../classes/chatEngine';
 import { jwtPreHandler } from '../classes/auth';
@@ -429,7 +429,10 @@ export async function orchestratorRoutes(fastify: FastifyInstance): Promise<void
         const createResult = await createSessionWithAgent({
           workspaceId,
           name: task.name,
-          tags: task.category ?? null
+          tags:
+            task.category && String(task.category).trim()
+              ? normalizeTagStringList([task.category as string])
+              : null
         });
         console.log('createResult', createResult);
         if (createResult.error || !createResult.session) {

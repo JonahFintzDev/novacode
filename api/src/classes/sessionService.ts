@@ -13,8 +13,8 @@ import type { AgentType } from '../@types/index';
 export interface CreateSessionWithAgentParams {
   workspaceId: string;
   name: string;
-  /** Optional tag label for this session. */
-  tags?: string | null;
+  /** Optional tags for this session (same shape as workspace tags). */
+  tags?: string[] | null;
   /** Which backend agent to use for this session (defaults to workspace.defaultAgentType or cursor-agent). */
   agentType?: AgentType;
 }

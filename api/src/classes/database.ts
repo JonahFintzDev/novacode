@@ -42,6 +42,22 @@ const pool = new Pool({ connectionString: getDatabaseUrl() });
 const adapter = new PrismaPg(pool);
 const _prisma = new PrismaClient({ adapter });
 
+/** Dedupe (case-insensitive), trim; used for workspace and session tag arrays. */
+export function normalizeTagStringList(tags: unknown[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const x of tags) {
+    if (typeof x !== 'string') continue;
+    const t = x.trim();
+    if (!t) continue;
+    const k = t.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(t);
+  }
+  return out;
+}
+
 function toChatQueueItem(row: {
   id: string;
   sessionId: string;
@@ -137,8 +153,10 @@ export const db = {
     const sortOrder = (maxSort._max.sortOrder ?? -1) + 1;
     const tagsArr =
       data.tags != null && Array.isArray(data.tags)
-        ? data.tags.filter((t): t is string => typeof t === 'string')
+        ? normalizeTagStringList(data.tags)
         : null;
+    const tagsJson =
+      tagsArr !== null && tagsArr.length > 0 ? tagsArr : Prisma.JsonNull;
     const row = await _prisma.workspace.create({
       data: {
         id,
@@ -151,7 +169,7 @@ export const db = {
         color: data.color ?? null,
         sortOrder,
         defaultAgentType: data.defaultAgentType ?? null,
-        tags: tagsArr ?? Prisma.JsonNull
+        tags: tagsJson
       }
     });
     return row;
@@ -175,9 +193,15 @@ export const db = {
     const tagsArr =
       patch.tags !== undefined
         ? Array.isArray(patch.tags)
-          ? patch.tags.filter((t): t is string => typeof t === 'string')
+          ? normalizeTagStringList(patch.tags)
           : null
         : undefined;
+    const tagsJson =
+      tagsArr === undefined
+        ? undefined
+        : tagsArr === null || tagsArr.length === 0
+          ? Prisma.JsonNull
+          : tagsArr;
     const row = await _prisma.workspace.update({
       where: { id },
       data: {
@@ -188,7 +212,7 @@ export const db = {
         gitUserEmail: patch.gitUserEmail ?? existing.gitUserEmail,
         color: patch.color ?? existing.color,
         defaultAgentType: patch.defaultAgentType ?? existing.defaultAgentType,
-        ...(tagsArr !== undefined && { tags: tagsArr === null ? Prisma.JsonNull : tagsArr })
+        ...(tagsJson !== undefined && { tags: tagsJson })
       }
     });
     return row;
@@ -241,16 +265,22 @@ export const db = {
   async createSession(data: {
     name: string;
     workspaceId: string;
-    tags?: string | null;
+    tags?: string[] | null;
     agentType?: string | null;
   }): Promise<Session> {
     const id = randomUUID();
     const createdAt = new Date().toISOString();
+    const tagsArr =
+      data.tags !== undefined && data.tags !== null && Array.isArray(data.tags)
+        ? normalizeTagStringList(data.tags)
+        : null;
+    const tagsJson =
+      tagsArr !== null && tagsArr.length > 0 ? tagsArr : Prisma.JsonNull;
     const row = await _prisma.session.create({
       data: {
         id,
         name: data.name,
-        tags: data.tags ?? null,
+        tags: tagsJson,
         sessionId: null,
         agentType: data.agentType ?? 'cursor-agent',
         messageJson: '[]',
@@ -267,12 +297,22 @@ export const db = {
       sessionId?: string | null;
       messageJson?: string;
       name?: string;
-      tags?: string | null;
+      tags?: string[] | null;
       archived?: boolean;
     }
   ): Promise<Session | undefined> {
     const existing = await _prisma.session.findUnique({ where: { id } });
     if (!existing) return undefined;
+
+    let tagsJson: Prisma.InputJsonValue | typeof Prisma.JsonNull | undefined;
+    if ('tags' in patch) {
+      if (patch.tags === null || patch.tags === undefined) {
+        tagsJson = Prisma.JsonNull;
+      } else {
+        const arr = normalizeTagStringList(patch.tags);
+        tagsJson = arr.length > 0 ? arr : Prisma.JsonNull;
+      }
+    }
 
     const row = await _prisma.session.update({
       where: { id },
@@ -280,7 +320,7 @@ export const db = {
         sessionId: patch.sessionId ?? existing.sessionId,
         messageJson: patch.messageJson ?? existing.messageJson,
         name: patch.name ?? existing.name,
-        tags: 'tags' in patch ? (patch.tags ?? null) : existing.tags,
+        ...(tagsJson !== undefined && { tags: tagsJson }),
         archived: patch.archived ?? existing.archived,
         updatedAt: new Date().toISOString()
       }

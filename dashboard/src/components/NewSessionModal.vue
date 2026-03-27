@@ -2,6 +2,9 @@
 // node_modules
 import { ref, watch } from 'vue';
 
+// components
+import TagChipsInput from '@/components/input/TagChipsInput.vue';
+
 // types
 import type { AgentType } from '@/@types/index';
 
@@ -13,6 +16,8 @@ const props = defineProps<{
   claudeAvailable?: boolean;
   /** Whether Cursor can be used for new sessions (authenticated). */
   cursorAvailable?: boolean;
+  /** Tag suggestions from existing sessions in the workspace. */
+  existingTags?: string[];
 }>();
 
 const emit = defineEmits<{
@@ -20,14 +25,14 @@ const emit = defineEmits<{
   create: [
     payload: {
       name: string;
-      tags?: string | null;
-      agentType?: AgentType;
+      tags?: string[] | null;
+      agentType: AgentType;
     }
   ];
 }>();
 
 const name = ref('');
-const tags = ref('');
+const formTags = ref<string[]>([]);
 const defaultName = ref('');
 const agentType = ref<AgentType>('cursor-agent');
 
@@ -47,8 +52,8 @@ watch(
   (open) => {
     if (open) {
       name.value = '';
+      formTags.value = [];
       defaultName.value = `Session ${new Date().toLocaleString()}`;
-      tags.value = '';
       agentType.value = computeInitialAgentType();
     }
   }
@@ -61,10 +66,10 @@ const close = (): void => {
 const onCreate = (): void => {
   if (props.loading) return;
   const finalName = name.value.trim() || defaultName.value;
-  const t = tags.value.trim() || null;
+  const tags = formTags.value;
   emit('create', {
     name: finalName,
-    ...(t ? { tags: t } : {}),
+    ...(tags.length > 0 ? { tags } : {}),
     agentType: agentType.value
   });
 };
@@ -113,12 +118,11 @@ const onCreate = (): void => {
               <label class="text-xs font-medium text-text-muted"
                 >Tags <span class="font-normal opacity-60">(optional)</span></label
               >
-              <input
-                v-model="tags"
-                type="text"
-                placeholder="e.g. Frontend, API…"
-                class="w-full text-sm px-3 py-3 rounded-lg border border-fg/[0.12] bg-fg/[0.04] text-text-primary placeholder-text-muted focus:outline-none focus:border-primary/50 transition-colors"
-                @keydown.escape="close"
+              <TagChipsInput
+                v-model="formTags"
+                :suggestions="existingTags ?? []"
+                datalist-id="new-session-tag-suggestions"
+                hint="Separate tags with a comma, or press Enter/Done. Suggestions from other sessions."
               />
             </div>
 

@@ -40,6 +40,25 @@ const handleDesktopMediaQueryChange = (event: MediaQueryListEvent): void => {
 
 const workspace = computed(() => store.workspaces.find((w) => w.id === workspaceId.value));
 
+const sessionTags = computed(() => {
+  const wid = workspaceId.value;
+  const all = store.allSessions.filter((s) => s.workspaceId === wid);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const s of all) {
+    const tags = s.tags;
+    if (!tags?.length) continue;
+    for (const t of tags) {
+      if (typeof t !== 'string' || !t.trim()) continue;
+      const k = t.trim().toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(t.trim());
+    }
+  }
+  return out.sort((a, b) => a.localeCompare(b));
+});
+
 // New session modal
 const showNewSessionModal = ref(false);
 const isSubmittingSession = ref(false);
@@ -64,7 +83,7 @@ async function loadAgentCapabilities(): Promise<void> {
 
 async function createSession(payload: {
   name: string;
-  tags?: string | null;
+  tags?: string[] | null;
   agentType?: AgentType;
 }): Promise<void> {
   if (isSubmittingSession.value) return;
@@ -212,6 +231,7 @@ onUnmounted(() => {
     :default-agent-type="(workspace && workspace.defaultAgentType) || null"
     :claude-available="claudeAvailable"
     :cursor-available="cursorAvailable"
+    :existing-tags="sessionTags"
     @create="createSession"
   />
 </template>

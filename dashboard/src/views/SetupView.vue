@@ -273,7 +273,7 @@ onMounted((): void => {
 </script>
 
 <template>
-  <div class="min-h-screen flex flex-col bg-bg">
+  <div class="flex min-h-0 flex-1 flex-col bg-bg">
     <!-- Header -->
     <header class="border-b border-border bg-surface px-6 py-4 shrink-0">
       <div class="max-w-5xl mx-auto flex items-center justify-between">
@@ -337,8 +337,10 @@ onMounted((): void => {
       </div>
     </div>
 
-    <!-- Main Content -->
-    <main class="flex-1 flex flex-col items-center px-6 py-10">
+    <!-- Main Content (scrolls on short viewports / mobile; shell is fixed + overflow-hidden) -->
+    <main
+      class="flex min-h-0 flex-1 flex-col items-center overflow-y-auto overscroll-contain px-6 py-10 [-webkit-overflow-scrolling:touch]"
+    >
       <Transition name="step" mode="out-in">
         <!-- ======================== STEP 1: Profile ======================== -->
         <div v-if="step === 1" key="step1" class="w-full max-w-2xl">

@@ -2,7 +2,8 @@
 import { FastifyInstance } from 'fastify';
 
 // classes
-import { db } from '../classes/database';
+import { db, normalizeTagStringList } from '../classes/database';
+import { normalizeSessionForApi } from '../classes/sessionNormalize';
 import { jwtPreHandler } from '../classes/auth';
 import { createSessionWithAgent } from '../classes/sessionService';
 import { getActiveSessionIds } from './chat';
@@ -15,6 +16,24 @@ import {
 
 // types
 import type { AgentType } from '../@types/index';
+
+function parseTagsFromBody(body: unknown): string[] | null | undefined {
+  if (!body || typeof body !== 'object' || !('tags' in body)) return undefined;
+  const raw = (body as Record<string, unknown>)['tags'];
+  if (raw === undefined) return undefined;
+  if (raw === null) return null;
+  if (Array.isArray(raw)) {
+    const n = normalizeTagStringList(raw);
+    return n.length > 0 ? n : null;
+  }
+  if (typeof raw === 'string') {
+    const t = raw.trim();
+    if (!t) return null;
+    const n = normalizeTagStringList(t.split(',').map((x) => x.trim()));
+    return n.length > 0 ? n : null;
+  }
+  return null;
+}
 
 export async function sessionsRoutes(fastify: FastifyInstance): Promise<void> {
   // GET /api/sessions
@@ -31,7 +50,7 @@ export async function sessionsRoutes(fastify: FastifyInstance): Promise<void> {
     );
     const allSessions = byWorkspace
       .flatMap(([active, archived]) => [...active, ...archived])
-      .map((s) => ({ ...s, busy: busyIds.has(s.id) }));
+      .map((s) => ({ ...normalizeSessionForApi(s), busy: busyIds.has(s.id) }));
     return reply.send(allSessions);
   });
 
@@ -43,14 +62,15 @@ export async function sessionsRoutes(fastify: FastifyInstance): Promise<void> {
       const { workspaceId } = request.params as { workspaceId: string };
       const body = request.body as {
         name: string;
-        tags?: string | null;
+        tags?: string[] | string | null;
         agentType?: AgentType;
       };
 
+      const tagsParsed = parseTagsFromBody(request.body);
       const result = await createSessionWithAgent({
         workspaceId,
         name: body.name,
-        tags: body.tags ?? null,
+        tags: tagsParsed === undefined ? null : tagsParsed,
         agentType: body.agentType
       });
 
@@ -61,10 +81,13 @@ export async function sessionsRoutes(fastify: FastifyInstance): Promise<void> {
           ...(status === 502 ? { details: result.error } : {})
         });
       }
+      if (!result.session) {
+        return reply.status(500).send({ error: 'Failed to create session' });
+      }
 
-      // notify workspace subscribers
-      broadcastWorkspaceSessionUpsert(workspaceId, result.session);
-      return reply.status(201).send(result.session);
+      const normalized = normalizeSessionForApi(result.session);
+      broadcastWorkspaceSessionUpsert(workspaceId, normalized);
+      return reply.status(201).send(normalized);
     }
   );
 
@@ -79,7 +102,10 @@ export async function sessionsRoutes(fastify: FastifyInstance): Promise<void> {
         query.archived === 'true' ? true : query.archived === 'false' ? false : undefined;
       const sessions = await db.listSessionsByWorkspace(workspaceId, { archived });
       const busyIds = getActiveSessionIds();
-      const enriched = sessions.map((s) => ({ ...s, busy: busyIds.has(s.id) }));
+      const enriched = sessions.map((s) => ({
+        ...normalizeSessionForApi(s),
+        busy: busyIds.has(s.id)
+      }));
       return reply.send(enriched);
     }
   );
@@ -97,7 +123,7 @@ export async function sessionsRoutes(fastify: FastifyInstance): Promise<void> {
       if (!session || session.workspaceId !== workspaceId) {
         return reply.status(404).send({ error: 'Session not found' });
       }
-      return reply.send(session);
+      return reply.send(normalizeSessionForApi(session));
     }
   );
 
@@ -112,7 +138,7 @@ export async function sessionsRoutes(fastify: FastifyInstance): Promise<void> {
       };
       const body = request.body as {
         name?: string;
-        tags?: string | null;
+        tags?: string[] | string | null;
         archived?: boolean;
       };
       const session = await db.getSession(sessionId);
@@ -121,18 +147,21 @@ export async function sessionsRoutes(fastify: FastifyInstance): Promise<void> {
       }
       const patch: {
         name?: string;
-        tags?: string | null;
+        tags?: string[] | null;
         archived?: boolean;
       } = {};
       if (body.name !== undefined) patch.name = body.name;
-      if ('tags' in (request.body as object)) patch.tags = body.tags ?? null;
+      if ('tags' in (request.body as object)) {
+        patch.tags = parseTagsFromBody(request.body) ?? null;
+      }
       if (body.archived !== undefined) patch.archived = body.archived;
       const updated = await db.updateSession(sessionId, patch);
       if (!updated) {
         return reply.status(500).send({ error: 'Failed to update session' });
       }
-      broadcastWorkspaceSessionUpsert(workspaceId, updated);
-      return reply.send(updated);
+      const normalized = normalizeSessionForApi(updated);
+      broadcastWorkspaceSessionUpsert(workspaceId, normalized);
+      return reply.send(normalized);
     }
   );
 

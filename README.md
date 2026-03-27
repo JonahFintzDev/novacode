@@ -64,12 +64,32 @@ Run [Cursor Agent](https://cursor.com) and [Claude Code](https://claude.ai/code)
 
 ## Quick start
 
-### Docker Compose (recommended)
+### One-line installer (`install.sh`)
+
+For a **published Docker image** under `~/.novacode` (install and updates use the same command):
 
 ```bash
-# 1. Clone the repo
-git clone https://github.com/your-username/novacode.git
-cd novacode
+curl -fsSL https://raw.githubusercontent.com/JonahFintzDev/novacode/main/app/scripts/install.sh | bash
+```
+
+**Prerequisites:** Docker with Compose (`docker compose` or `docker-compose`), and `openssl` on first install.
+
+The script writes `~/.novacode/.env` with generated secrets, pulls `novacode/novacode:latest`, and starts Compose. Re-run the same command to update. Optional environment variables:
+
+| Variable | Purpose |
+|----------|---------|
+| `NOVACODE_DIR` | Install root (default: `~/.novacode`) |
+| `NOVACODE_INSTALL_BASE_URL` | Raw URL of the repo’s `app/` folder for fetched compose and `.env.example` (see `scripts/install.sh`) |
+| `NOVACODE_IMAGE` | Image tag (default: `novacode/novacode:latest`) |
+
+On first install you may be prompted for extra host directory mounts (workspaces under `/data-root/...`). Then open **`http://localhost:3030`** and complete **first-run setup**.
+
+### Docker Compose (build from source)
+
+```bash
+# 1. Clone the repo (application code lives under app/ in the monorepo)
+git clone https://github.com/JonahFintzDev/novacode.git
+cd novacode/app
 
 # 2. Create your env file
 cp .env.example .env
@@ -211,8 +231,10 @@ cd api && npx prisma migrate dev --name your_migration_name
 
 ## Project structure
 
+This README is the **application** package. In the full repository, these paths sit under `app/`.
+
 ```
-novacode/
+app/
 ├── api/                  # Fastify backend (TypeScript)
 │   ├── src/
 │   │   ├── classes/      # DB, auth, config, PTY, chat engine, …
@@ -225,7 +247,10 @@ novacode/
 │       ├── components/   # Shared UI components
 │       └── stores/       # Pinia stores
 ├── docs/                 # Additional documentation
-├── docker-compose.yml    # Production compose
+├── scripts/
+│   ├── install.sh        # One-line Docker install / update
+│   └── docker-compose.install.yml
+├── docker-compose.yml    # Production compose (build from Dockerfile)
 ├── dev.docker-compose.yaml
 └── Dockerfile
 ```

@@ -6,6 +6,7 @@ import type { WebSocket } from 'ws';
 import { verifyToken } from '../classes/auth';
 import { sessionManager } from '../classes/sessionManager';
 import { db } from '../classes/database';
+import { normalizeSessionForApi } from '../classes/sessionNormalize';
 import { getActiveSessionIds } from './chat';
 import { subscribeBusy } from '../classes/chatEngine';
 
@@ -176,7 +177,7 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
       );
       const allSessions = byWorkspace
         .flatMap(([active, archived]) => [...active, ...archived])
-        .map((s) => ({ ...s, busy: busyIds.has(s.id) }));
+        .map((s) => ({ ...normalizeSessionForApi(s), busy: busyIds.has(s.id) }));
       sendJson(socket, { type: 'global-snapshot', sessions: allSessions });
 
       socket.on('close', () => {
@@ -224,8 +225,9 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
         db.listSessionsByWorkspace(workspaceId, { archived: false }),
         db.listSessionsByWorkspace(workspaceId, { archived: true })
       ]);
-      const enrich = (rows: any[]) => rows.map((s) => ({ ...s, busy: busyIds.has(s.id) }));
-      sendJson(socket, { type: 'snapshot', active: enrich(active as any), archived: enrich(archived as any) });
+      const enrich = (rows: { tags?: unknown }[]) =>
+        rows.map((s) => ({ ...normalizeSessionForApi(s), busy: busyIds.has((s as { id: string }).id) }));
+      sendJson(socket, { type: 'snapshot', active: enrich(active), archived: enrich(archived) });
 
       socket.on('close', () => {
         wsClients.delete(socket);

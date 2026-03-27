@@ -278,16 +278,19 @@ watch(
                       : 'Cursor'
                   }}
                 </span>
-                <span v-if="item.kind === 'session' && item.session.tags" class="mx-1 text-fg/40">
-                  •
-                </span>
-                <span
-                  v-if="item.kind === 'session' && item.session.tags"
-                  class="px-1.5 py-0.5 rounded-full border"
-                  :class="categoryColorClass(item.session.tags)"
-                >
-                  {{ item.session.tags }}
-                </span>
+                <template v-if="item.kind === 'session' && item.session.tags?.length">
+                  <span class="mx-1 text-fg/40 shrink-0">•</span>
+                  <span class="inline-flex flex-wrap items-center gap-1 min-w-0">
+                    <span
+                      v-for="tag in item.session.tags"
+                      :key="tag"
+                      class="px-1.5 py-0.5 rounded-full border text-[11px]"
+                      :class="categoryColorClass(tag)"
+                    >
+                      {{ tag }}
+                    </span>
+                  </span>
+                </template>
                 <span class="ml-auto">
                   {{
                     relativeTime(

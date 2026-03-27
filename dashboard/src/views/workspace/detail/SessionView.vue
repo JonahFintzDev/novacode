@@ -86,10 +86,30 @@ const cursorAvailable = ref(false);
 
 const activeFilter = ref<string | null>(null);
 
-/** Unique tags used by sessions (for filter chips). */
+function sessionHasTag(s: Session, tag: string | null): boolean {
+  if (!tag) return true;
+  const list = s.tags;
+  if (!list?.length) return false;
+  return list.some((x) => x.toLowerCase() === tag.toLowerCase());
+}
+
+/** Unique tags used by sessions (for filter chips and autocomplete). */
 const sessionTags = computed((): string[] => {
   const all = [...sessions.value, ...archivedSessions.value];
-  return [...new Set(all.map((s) => s.tags).filter((t): t is string => !!t))];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const s of all) {
+    const tags = s.tags;
+    if (!tags?.length) continue;
+    for (const t of tags) {
+      if (typeof t !== 'string' || !t.trim()) continue;
+      const k = t.trim().toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(t.trim());
+    }
+  }
+  return out.sort((a, b) => a.localeCompare(b));
 });
 
 const orchestratorActiveFilter = ref<string | null>(null);
@@ -160,7 +180,7 @@ const filteredSessions = computed(() => {
   const excludedIds = sessionsAttachedToOrchestrators.value;
   let list = sessions.value.filter((s) => !excludedIds.has(s.id));
   if (activeFilter.value) {
-    list = list.filter((s) => s.tags === activeFilter.value);
+    list = list.filter((s) => sessionHasTag(s, activeFilter.value));
   }
   return [...list].sort((a, b) => {
     // Busy sessions first
@@ -176,7 +196,7 @@ const archivedCount = computed(() => archivedSessions.value.length);
 const filteredArchivedSessions = computed(() => {
   let list = archivedSessions.value;
   if (activeFilter.value) {
-    list = list.filter((s) => s.tags === activeFilter.value);
+    list = list.filter((s) => sessionHasTag(s, activeFilter.value));
   }
   return [...list].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 });
@@ -433,7 +453,7 @@ const fetchOrchestrators = async (): Promise<void> => {
 
 const createSession = async (payload: {
   name: string;
-  tags?: string | null;
+  tags?: string[] | null;
   agentType?: AgentType;
 }): Promise<void> => {
   if (!props.workspace || isSubmittingSession.value) return;
@@ -530,7 +550,7 @@ const bulkDeleteOrchestrators = async (): Promise<void> => {
   }
 };
 
-const saveEditSession = async (payload: { name: string; tags?: string | null }): Promise<void> => {
+const saveEditSession = async (payload: { name: string; tags?: string[] | null }): Promise<void> => {
   if (!sessionToEdit.value || !props.workspace) return;
   isSavingEdit.value = true;
   try {
@@ -632,6 +652,39 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <div
+    v-if="sessionTags.length > 0"
+    class="flex flex-wrap items-center gap-2 mb-3"
+  >
+    <span class="text-xs text-text-muted shrink-0">Tags</span>
+    <button
+      type="button"
+      class="text-xs px-2.5 py-1 rounded-full border transition-colors"
+      :class="
+        activeFilter === null
+          ? 'bg-primary/15 text-primary border-primary/30'
+          : 'border-border text-text-muted hover:text-text-primary'
+      "
+      @click="activeFilter = null"
+    >
+      All
+    </button>
+    <button
+      v-for="t in sessionTags"
+      :key="t"
+      type="button"
+      class="text-xs px-2.5 py-1 rounded-full border transition-colors"
+      :class="
+        activeFilter === t
+          ? 'bg-primary/15 text-primary border-primary/30'
+          : 'border-border text-text-muted hover:text-text-primary'
+      "
+      @click="activeFilter = activeFilter === t ? null : t"
+    >
+      {{ t }}
+    </button>
+  </div>
+
   <!-- Top: view mode selector + new session button -->
   <div class="flex justify-between sm:justify-end mb-3">
     <div class="button-select-small mr-2 mt-0">
@@ -710,6 +763,18 @@ onBeforeUnmount(() => {
                   ]
                 }}
               </p>
+              <div
+                v-if="item.kind === 'session' && item.session.tags?.length"
+                class="flex flex-wrap gap-1 mt-2"
+              >
+                <span
+                  v-for="tag in item.session.tags"
+                  :key="tag"
+                  class="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20 font-medium"
+                >
+                  {{ tag }}
+                </span>
+              </div>
             </div>
             <div class="buttons">
               <button
@@ -771,7 +836,7 @@ onBeforeUnmount(() => {
               >
             </button>
           </div>
-          <div class="cell flex-1">
+          <div class="cell flex-1 min-w-0">
             <p class="title flex items-center gap-2">
               <span>{{
                 item.kind === 'session' ? item.session.name : item.orchestrator.name
@@ -785,6 +850,18 @@ onBeforeUnmount(() => {
                 Busy
               </span>
             </p>
+            <div
+              v-if="item.kind === 'session' && item.session.tags?.length"
+              class="flex flex-wrap gap-1 mt-1"
+            >
+              <span
+                v-for="tag in item.session.tags"
+                :key="tag"
+                class="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20 font-medium"
+              >
+                {{ tag }}
+              </span>
+            </div>
           </div>
           <div class="cell">
             <p
@@ -884,6 +961,18 @@ onBeforeUnmount(() => {
                     <p class="tag" :class="AGENT_TYPE_COLOR[session.agentType]">
                       {{ AGENT_TYPE_TEXT[session.agentType] }}
                     </p>
+                    <div
+                      v-if="session.tags?.length"
+                      class="flex flex-wrap gap-1 mt-2"
+                    >
+                      <span
+                        v-for="tag in session.tags"
+                        :key="tag"
+                        class="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20 font-medium"
+                      >
+                        {{ tag }}
+                      </span>
+                    </div>
                   </div>
                   <div class="buttons">
                     <button
@@ -931,7 +1020,7 @@ onBeforeUnmount(() => {
                     >
                   </button>
                 </div>
-                <div class="cell flex-1">
+                <div class="cell flex-1 min-w-0">
                   <p class="title flex items-center gap-2">
                     <span>{{ session.name }}</span>
                     <span
@@ -943,6 +1032,18 @@ onBeforeUnmount(() => {
                       Busy
                     </span>
                   </p>
+                  <div
+                    v-if="session.tags?.length"
+                    class="flex flex-wrap gap-1 mt-1"
+                  >
+                    <span
+                      v-for="tag in session.tags"
+                      :key="tag"
+                      class="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20 font-medium"
+                    >
+                      {{ tag }}
+                    </span>
+                  </div>
                 </div>
                 <div class="cell">
                   <p class="tag" :class="AGENT_TYPE_COLOR[session.agentType]">
@@ -1065,6 +1166,7 @@ onBeforeUnmount(() => {
     :model-value="sessionToEdit !== null"
     :session="sessionToEdit"
     :loading="isSavingEdit"
+    :existing-tags="sessionTags"
     @update:model-value="
       (v) => {
         if (!v) sessionToEdit = null;
@@ -1079,6 +1181,7 @@ onBeforeUnmount(() => {
     :default-agent-type="(workspace && workspace.defaultAgentType) || null"
     :claude-available="claudeAvailable"
     :cursor-available="cursorAvailable"
+    :existing-tags="sessionTags"
     @create="createSession"
   />
 

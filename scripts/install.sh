@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # NovaCode one-line installer / updater (install vs update is detected automatically).
 #
-#   curl -fsSL https://raw.githubusercontent.com/OWNER/novacode/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/JonahFintzDev/novacode/main/app/scripts/install.sh | bash
 #
 # If ~/.novacode/.env exists → updates (refetch compose, pull images, recreate). Otherwise → fresh install.
 #
-# Override the Compose template URL (must serve scripts/docker-compose.install.yml):
-#   export NOVACODE_INSTALL_BASE_URL="https://raw.githubusercontent.com/OWNER/novacode/main"
+# Override the raw GitHub base for fetched files (must be the app/ tree: contains scripts/ and .env.example):
+#   export NOVACODE_INSTALL_BASE_URL="https://raw.githubusercontent.com/JonahFintzDev/novacode/main/app"
 #
 set -euo pipefail
 
@@ -18,7 +18,7 @@ NOVACODE_POSTGRES_DATA="${NOVACODE_DIR}/postgres-data"
 NOVACODE_IMAGE_DEFAULT="${NOVACODE_IMAGE:-novacode/novacode:latest}"
 
 # Base URL for fetching docker-compose.install.yml (no trailing slash).
-NOVACODE_INSTALL_BASE_URL="${NOVACODE_INSTALL_BASE_URL:-https://raw.githubusercontent.com/novacode/novacode/main}"
+NOVACODE_INSTALL_BASE_URL="${NOVACODE_INSTALL_BASE_URL:-https://raw.githubusercontent.com/JonahFintzDev/novacode/main/app}"
 
 COMPOSE_REL_PATH="scripts/docker-compose.install.yml"
 COMPOSE_FETCH_URL="${NOVACODE_INSTALL_BASE_URL}/${COMPOSE_REL_PATH}"

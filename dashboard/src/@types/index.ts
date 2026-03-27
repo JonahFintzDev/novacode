@@ -55,7 +55,7 @@ export interface Workspace {
 export interface Session {
   id: string;
   name: string;
-  tags: string | null;
+  tags: string[] | null;
   sessionId: string | null;
   agentType: AgentType;
   messageJson: string;

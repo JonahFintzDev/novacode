@@ -298,7 +298,8 @@ hr {
   }
 
   .grid-view-items {
-    @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4;
+    @apply grid gap-4;
+    grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
     .grid-item {
       @apply bg-card/30 p-4 rounded-md border border-border overflow-hidden cursor-pointer;
       @apply transition-all hover:bg-card/40 hover:border-primary/50;

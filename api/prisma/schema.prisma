@@ -74,7 +74,7 @@ model Workspace {
 model Session {
   id          String    @id
   name        String
-  tags        String?
+  tags        Json?     // string[] stored as JSON
   sessionId   String?   @map("session_id")
   agentType   String    @map("agent_type")
   messageJson String    @map("message_json")

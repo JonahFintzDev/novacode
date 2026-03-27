@@ -327,7 +327,7 @@ export const sessionsApi = {
     workspaceId: string,
     payload: {
       name: string;
-      tags?: string | null;
+      tags?: string[] | null;
       agentType?: AgentType;
     }
   ): ReturnType<typeof http.post<Session>> =>
@@ -338,7 +338,7 @@ export const sessionsApi = {
     sessionId: string,
     patch: {
       name?: string;
-      tags?: string | null;
+      tags?: string[] | null;
       archived?: boolean;
     }
   ): ReturnType<typeof http.patch<Session>> =>

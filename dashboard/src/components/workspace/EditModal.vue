@@ -86,6 +86,21 @@ const tagSuggestions = computed((): string[] => {
 });
 
 // -------------------------------------------------- Methods --------------------------------------------------
+function normalizeTags(raw: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const x of raw) {
+    if (typeof x !== 'string') continue;
+    const t = x.trim();
+    if (!t) continue;
+    const k = t.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(t);
+  }
+  return out;
+}
+
 // --- validation ---
 const validate = (): boolean => {
   errors.value = {};
@@ -98,6 +113,10 @@ const validate = (): boolean => {
 // --- submit / close ---
 const submit = async (): Promise<void> => {
   if (!validate()) return;
+  addTag(tagInput.value);
+  const tagsClean = normalizeTags(form.value.tags);
+  form.value.tags = tagsClean;
+  tagInput.value = '';
   bSaving.value = true;
   try {
     emit('save', {
@@ -112,7 +131,7 @@ const submit = async (): Promise<void> => {
         AGENT_OPTIONS.some((o) => o.value === form.value.defaultAgentType)
           ? (form.value.defaultAgentType as AgentType)
           : null,
-      tags: form.value.tags.length > 0 ? form.value.tags : null
+      tags: tagsClean.length > 0 ? tagsClean : null
     });
   } finally {
     bSaving.value = false;
@@ -161,10 +180,34 @@ const removeTag = (index: number): void => {
 };
 
 const onTagInputKeydown = (e: KeyboardEvent): void => {
-  if (e.key === 'Enter' || e.key === ',') {
+  const k = e.key;
+  const isEnter = k === 'Enter' || k === 'NumpadEnter';
+  const isComma = k === ',' || k === 'Comma';
+  if (isEnter || isComma) {
     e.preventDefault();
     addTag(tagInput.value);
   }
+};
+
+/** Mobile keyboards often omit keydown for Enter; keyup + comma-in-value still commit. */
+const onTagInputKeyup = (e: KeyboardEvent): void => {
+  const k = e.key;
+  if (k === 'Enter' || k === 'NumpadEnter') {
+    e.preventDefault();
+    addTag(tagInput.value);
+  }
+};
+
+/** Commit tags when user types commas (works on soft keyboards that do not emit comma key events). */
+const onTagInputInput = (): void => {
+  const v = tagInput.value;
+  if (!v.includes(',')) return;
+  const parts = v.split(',');
+  const remainder = parts.pop() ?? '';
+  for (const p of parts) {
+    addTag(p);
+  }
+  tagInput.value = remainder;
 };
 
 // -------------------------------------------------- Watchers --------------------------------------------------
@@ -173,9 +216,11 @@ watch(
   (open: boolean) => {
     if (open) {
       const rawTags = props.workspace?.tags;
-      const tags = Array.isArray(rawTags)
-        ? rawTags.filter((t): t is string => typeof t === 'string')
-        : [];
+      const tags = normalizeTags(
+        Array.isArray(rawTags)
+          ? rawTags.filter((t): t is string => typeof t === 'string')
+          : []
+      );
       form.value = {
         name: props.workspace?.name ?? '',
         path: props.workspace?.path ?? '',
@@ -260,41 +305,52 @@ watch(
               <p class="hint" v-else>Select an existing group or type a new name to create one.</p>
             </div>
 
-            <!-- Tags -->
+            <!-- Tags: chips + field share one bordered control (global input { width:100% } is overridden in scoped CSS). -->
             <div class="field">
               <div class="label">Tags</div>
-              <div
-                class="flex flex-wrap gap-1.5 items-center rounded-lg border border-input bg-input/30 px-2 py-1.5 min-h-[2.25rem]"
-              >
-                <span
-                  v-for="(tag, index) in form.tags"
-                  :key="index"
-                  class="inline-flex items-center gap-0.5 rounded-md bg-primary/15 text-primary text-sm px-2 py-0.5"
+              <div class="input-wrap w-full min-w-0">
+                <div
+                  class="tag-input-shell flex flex-wrap gap-1.5 items-center content-start w-full min-w-0 min-h-10 rounded-md border border-border bg-input px-3 py-1.5 text-sm transition-all outline-none focus-within:border-primary/70"
                 >
-                  {{ tag }}
-                  <button
-                    type="button"
-                    class="rounded hover:bg-primary/20 p-0.5"
-                    @click="removeTag(index)"
-                    aria-label="Remove tag"
+                  <span
+                    v-for="(tag, index) in form.tags"
+                    :key="`${tag}-${index}`"
+                    class="inline-flex items-center gap-0.5 shrink-0 rounded-md bg-primary/15 text-primary text-sm px-2 py-0.5 max-w-full"
                   >
-                    <span class="material-symbols-outlined text-sm">close</span>
-                  </button>
-                </span>
-                <input
-                  v-model="tagInput"
-                  type="text"
-                  class="flex-1 min-w-[8rem] bg-transparent border-0 outline-none text-text-primary text-sm placeholder:text-text-muted"
-                  placeholder="Add tag…"
-                  list="tag-suggestions"
-                  @keydown="onTagInputKeydown"
-                />
+                    {{ tag }}
+                    <button
+                      type="button"
+                      class="rounded hover:bg-primary/20 p-0.5"
+                      @mousedown.prevent
+                      @click="removeTag(index)"
+                      aria-label="Remove tag"
+                    >
+                      <span class="material-symbols-outlined text-sm">close</span>
+                    </button>
+                  </span>
+                  <input
+                    v-model="tagInput"
+                    type="text"
+                    autocomplete="off"
+                    autocorrect="off"
+                    autocapitalize="off"
+                    enterkeyhint="done"
+                    inputmode="text"
+                    class="tag-input-field min-h-0 border-0 bg-transparent px-1 py-0 shadow-none text-text-primary text-sm placeholder:text-text-muted outline-none"
+                    placeholder="Add tag…"
+                    list="tag-suggestions"
+                    @keydown="onTagInputKeydown"
+                    @keyup="onTagInputKeyup"
+                    @input="onTagInputInput"
+                    @blur="addTag(tagInput)"
+                  />
+                </div>
               </div>
               <datalist id="tag-suggestions">
                 <option v-for="s in tagSuggestions" :key="s" :value="s" />
               </datalist>
               <p class="hint">
-                Type and press Enter or comma to add. Suggestions from other workspaces.
+                Separate tags with a comma, or press Enter/Done. Suggestions from other workspaces.
               </p>
             </div>
 
@@ -383,3 +439,23 @@ watch(
     </Transition>
   </Teleport>
 </template>
+
+<style scoped>
+/*
+ * Global `input { width: 100%; height: 2.5rem; ... }` forces the tag field to full width, so chips
+ * wrap above the caret and look “outside” the typing area. Shrink the inner field to a flex item.
+ */
+.tag-input-shell .tag-input-field {
+  width: auto !important;
+  min-width: 2.5rem;
+  flex: 1 1 0%;
+  min-height: 0 !important;
+  height: auto !important;
+  max-width: 100%;
+  padding: 0 0.25rem !important;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+</style>

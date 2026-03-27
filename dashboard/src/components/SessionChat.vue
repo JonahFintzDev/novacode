@@ -39,6 +39,27 @@ const emit = defineEmits<{
 }>();
 
 const session = ref<Session | null>(null);
+
+/** Tags used in this workspace (for edit session autocomplete). */
+const sessionTagSuggestions = computed(() => {
+  const wid = props.workspaceId;
+  const all = workspacesStore.allSessions.filter((s) => s.workspaceId === wid);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const s of all) {
+    const tags = s.tags;
+    if (!tags?.length) continue;
+    for (const t of tags) {
+      if (typeof t !== 'string' || !t.trim()) continue;
+      const k = t.trim().toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(t.trim());
+    }
+  }
+  return out.sort((a, b) => a.localeCompare(b));
+});
+
 const loading = ref(true);
 const error = ref<string | null>(null);
 const showEditModal = ref(false);
@@ -91,6 +112,8 @@ const isStreaming = ref(false);
 const chatError = ref<string | null>(null);
 const promptText = ref<string>('');
 const messagesEl = ref<HTMLElement | null>(null);
+/** Bottom sentinel inside the scroll area so follow-bottom includes streaming + thinking. */
+const messagesScrollAnchor = ref<HTMLElement | null>(null);
 const textareaEl = ref<HTMLTextAreaElement | null>(null);
 const fileInputEl = ref<HTMLInputElement | null>(null);
 const lightboxSrc = ref<string | null>(null);
@@ -266,6 +289,8 @@ interface DisplayItem {
 // Items being built during a live stream; raw lines saved for DB persistence.
 const streamingItems = ref<DisplayItem[]>([]);
 const streamingRawLines: string[] = [];
+/** Cursor `thinking` / `delta` chunks — shown for the whole busy stream; cleared when the run ends. Not in history. */
+const streamingThinkingText = ref('');
 const notifiedTodoIds = new Set<string>();
 
 // ── Tool call helpers ─────────────────────────────────────────────────────────
@@ -328,11 +353,27 @@ function isToolResultSuccess(toolCallObj: Record<string, unknown>): boolean {
 }
 
 // ── Parse events → DisplayItems ───────────────────────────────────────────────
-function processEventLine(line: string, items: DisplayItem[]): void {
+function processEventLine(
+  line: string,
+  items: DisplayItem[],
+  opts?: { liveThinking?: boolean }
+): void {
   let event: Record<string, unknown>;
   try {
     event = JSON.parse(line);
   } catch {
+    return;
+  }
+
+  // Ephemeral thinking stream (Cursor stream-json) — never persisted as display items.
+  if (event.type === 'thinking') {
+    if (
+      opts?.liveThinking &&
+      event.subtype === 'delta' &&
+      typeof event.text === 'string'
+    ) {
+      streamingThinkingText.value += event.text;
+    }
     return;
   }
 
@@ -348,7 +389,9 @@ function processEventLine(line: string, items: DisplayItem[]): void {
       .filter((b) => b.type === 'text')
       .map((b) => b.text ?? '')
       .join('');
-    if (!text) return;
+    // Cursor stream-json sometimes emits assistant chunks that are only newlines/spaces; skip those
+    // so we do not render empty markdown bubbles between tool calls.
+    if (!text.trim()) return;
     const last = items[items.length - 1];
     if (last?.kind === 'text') {
       last.text = (last.text ?? '') + text;
@@ -439,9 +482,18 @@ function isScrolledToBottom(): boolean {
 
 async function scrollToBottom(smooth = false) {
   await nextTick();
+  // Wait for layout/paint so scrollHeight and the thinking block height are final.
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
   const el = messagesEl.value;
   if (!el) return;
   showScrollToBottom.value = false;
+  const anchor = messagesScrollAnchor.value;
+  if (anchor) {
+    anchor.scrollIntoView({ block: 'end', behavior: smooth ? 'smooth' : 'auto' });
+    return;
+  }
   if (!smooth) {
     el.scrollTop = el.scrollHeight;
     return;
@@ -466,7 +518,20 @@ async function scrollToBottomIfPinned() {
   if (isScrolledToBottom()) await scrollToBottom();
 }
 
+/** Block wheel scrolling while streaming; must use { passive: false } (see watch below). */
+function streamLockWheel(e: WheelEvent) {
+  e.preventDefault();
+}
+
 function onMessagesScroll() {
+  if (isStreaming.value) {
+    const el = messagesEl.value;
+    if (el && !isScrolledToBottom()) {
+      el.scrollTop = el.scrollHeight;
+    }
+    showScrollToBottom.value = false;
+    return;
+  }
   showScrollToBottom.value = !isScrolledToBottom();
   if (!hasMore.value || loadingMore.value) return;
   if (messagesEl.value && messagesEl.value.scrollTop < 100) {
@@ -503,6 +568,7 @@ function connectChatWs() {
         hasMore.value = msg.hasMore ?? false;
         streamingItems.value = [];
         streamingRawLines.length = 0;
+        streamingThinkingText.value = '';
         notifiedTodoIds.clear();
         isStreaming.value = msg.streaming === true;
         forceInitialScrollToBottom();
@@ -528,13 +594,13 @@ function connectChatWs() {
             imagePaths: prompt.imagePaths?.length ? prompt.imagePaths : undefined,
             createdAt: prompt.createdAt
           });
-          scrollToBottomIfPinned();
+          void scrollToBottom();
         }
       } else if (msg.type === 'stream') {
         isStreaming.value = true;
         const line = msg.data ?? '';
         streamingRawLines.push(line);
-        processEventLine(line, streamingItems.value);
+        processEventLine(line, streamingItems.value, { liveThinking: true });
         for (const item of streamingItems.value) {
           if (item.kind !== 'todos' || !item.todoItems) continue;
           for (const t of item.todoItems) {
@@ -544,7 +610,7 @@ function connectChatWs() {
             }
           }
         }
-        scrollToBottomIfPinned();
+        void scrollToBottom();
       } else if (msg.type === 'done') {
         const lastAssistantMessage = latestAssistantText(streamingItems.value);
         const events = [...streamingRawLines];
@@ -556,6 +622,7 @@ function connectChatWs() {
         });
         streamingItems.value = [];
         streamingRawLines.length = 0;
+        streamingThinkingText.value = '';
         notifiedTodoIds.clear();
         isStreaming.value = false;
         scrollToBottomIfPinned();
@@ -564,10 +631,12 @@ function connectChatWs() {
         chatError.value = msg.message ?? 'Unknown error';
         streamingItems.value = [];
         streamingRawLines.length = 0;
+        streamingThinkingText.value = '';
         notifiedTodoIds.clear();
         isStreaming.value = false;
       } else if (msg.type === 'server-shutdown') {
         chatError.value = 'Server disconnected';
+        streamingThinkingText.value = '';
         isStreaming.value = false;
       }
     } catch {
@@ -652,7 +721,7 @@ function openEditModal() {
   showEditModal.value = true;
 }
 
-async function saveSessionEdit(payload: { name: string; tags?: string | null }) {
+async function saveSessionEdit(payload: { name: string; tags?: string[] | null }) {
   isSavingEdit.value = true;
   try {
     const { data: updated } = await sessionsApi.update(props.workspaceId, props.sessionId, payload);
@@ -759,6 +828,7 @@ watch(
     messages.value = [];
     streamingItems.value = [];
     streamingRawLines.length = 0;
+    streamingThinkingText.value = '';
     notifiedTodoIds.clear();
     chatError.value = null;
     session.value = null;
@@ -785,6 +855,18 @@ watch(
   }
 );
 
+watch(isStreaming, async (streaming) => {
+  await nextTick();
+  const el = messagesEl.value;
+  if (!el) return;
+  el.removeEventListener('wheel', streamLockWheel);
+  if (streaming) {
+    showScrollToBottom.value = false;
+    el.addEventListener('wheel', streamLockWheel, { passive: false });
+    void scrollToBottom();
+  }
+});
+
 onMounted(async () => {
   wsUnmounted = false;
   chatInputMql = window.matchMedia('(min-width: 768px)');
@@ -809,6 +891,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  messagesEl.value?.removeEventListener('wheel', streamLockWheel);
   wsUnmounted = true;
   if (chatInputMql) {
     chatInputMql.removeEventListener('change', syncChatInputBreakpoint);
@@ -850,11 +933,17 @@ onUnmounted(() => {
               {{ workspaceName }}
             </p>
             <span
-              v-if="session?.tags"
-              class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border mt-0.5"
-              :class="categoryColorClass(session.tags)"
+              v-if="session?.tags?.length"
+              class="inline-flex flex-wrap items-center gap-1 mt-0.5"
             >
-              {{ session.tags }}
+              <span
+                v-for="tag in session.tags"
+                :key="tag"
+                class="inline-flex items-center text-xs px-2 py-0.5 rounded-full border"
+                :class="categoryColorClass(tag)"
+              >
+                {{ tag }}
+              </span>
             </span>
           </div>
         </div>
@@ -956,6 +1045,7 @@ onUnmounted(() => {
         <div
           ref="messagesEl"
           class="flex-1 overflow-y-auto px-4 md:px-6 py-4 space-y-3 min-h-0"
+          :class="isStreaming ? 'overscroll-contain' : ''"
           @scroll="onMessagesScroll"
         >
           <!-- Chat skeleton -->
@@ -1264,8 +1354,37 @@ onUnmounted(() => {
                   </div>
                 </div>
               </template>
-              <!-- Thinking indicator -->
-              <div v-if="streamingItems.length === 0" class="flex justify-start">
+              <!-- Model thinking (Cursor stream-json): keep visible until the turn ends (not busy) -->
+              <div v-if="streamingThinkingText.trim()" class="flex justify-start">
+                <div
+                  class="flex h-[240px] max-w-[85%] min-h-0 flex-col overflow-hidden rounded-xl border border-fg/10 border-dashed bg-fg/[0.03] px-3 py-2 text-xs text-text-muted"
+                >
+                  <div
+                    class="flex shrink-0 items-center gap-1.5 pb-1 text-[11px] font-medium uppercase tracking-wide text-text-muted/90"
+                  >
+                    <span class="material-symbols-outlined select-none shrink-0" style="font-size: 14px"
+                      >psychology</span
+                    >
+                    Thinking
+                  </div>
+                  <!-- Nested min-h-0 + overflow-hidden gives the inner scroller a real height cap (flex quirk). -->
+                  <div class="min-h-0 flex-1 overflow-hidden">
+                    <!-- column-reverse: scrollport stays anchored to the latest streamed text (CSS-only tail). -->
+                    <div
+                      class="flex h-full max-h-full flex-col-reverse overflow-y-auto overflow-x-hidden [overflow-anchor:none]"
+                    >
+                      <pre
+                        class="w-full min-w-0 whitespace-pre-wrap break-words font-sans leading-snug text-text-muted"
+                      >{{ streamingThinkingText }}</pre>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <!-- Thinking indicator (no streamed content yet) -->
+              <div
+                v-if="streamingItems.length === 0 && !streamingThinkingText.trim()"
+                class="flex justify-start"
+              >
                 <div class="bg-fg/[0.06] px-4 py-2 rounded-2xl rounded-bl-sm">
                   <span class="inline-flex items-center gap-1 text-text-muted">
                     <span class="animate-pulse text-sm">●</span>
@@ -1284,6 +1403,9 @@ onUnmounted(() => {
                 {{ chatError }}
               </div>
             </div>
+
+            <!-- Pinned-to-bottom follows this (incl. live thinking), not a fixed inner scroll on the thinking pre -->
+            <div ref="messagesScrollAnchor" class="h-px w-full shrink-0" aria-hidden="true" />
           </template>
         </div>
 
@@ -1555,6 +1677,7 @@ onUnmounted(() => {
       v-model="showEditModal"
       :session="session"
       :loading="isSavingEdit"
+      :existing-tags="sessionTagSuggestions"
       @save="saveSessionEdit"
     />
 
