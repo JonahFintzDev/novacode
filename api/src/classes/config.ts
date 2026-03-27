@@ -1,0 +1,259 @@
+// node_modules
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+
+// --------------------------------------------- Config ---------------------------------------------
+
+function optional(name: string, fallback = ''): string {
+  return process.env[name] ?? fallback;
+}
+
+export const config = {
+  // auth: credentials stored in DB, first-use setup creates the initial user
+  jwtSecret: optional('JWT_SECRET'),
+  port: parseInt(optional('PORT', '3000'), 10),
+  cursorCommand: '/root/.local/bin/cursor-agent',
+  claudeCommand: 'claude',
+  configDir: '/config',
+  /** Root directory on the host; workspace paths are relative to this. */
+  workspaceBrowseRoot: '/data-root',
+
+  // MCP server (optional): TCP port for MCP transport; 0 = disabled
+  mcpPort: parseInt(optional('MCP_PORT', '0'), 10),
+
+  // env vars forwarded to spawned agent processes
+  agentEnv: (gitOverrides?: { name?: string; email?: string }) => {
+    const configDir = config.configDir;
+    const env: Record<string, string> = {};
+    const forward = [
+      'PATH',
+      'TERM',
+      'LANG',
+      'LC_ALL',
+      'USER',
+      'LOGNAME',
+      'XDG_CONFIG_HOME',
+      'CURSOR_HOME'
+    ];
+    for (const key of forward) {
+      if (process.env[key]) env[key] = process.env[key]!;
+    }
+    for (const [k, v] of Object.entries(process.env)) {
+      if (k.startsWith('AGENT_ENV_') && v) {
+        env[k.slice('AGENT_ENV_'.length)] = v;
+      }
+    }
+    env['TERM'] = env['TERM'] || 'xterm-256color';
+    env['HOME'] = configDir;
+    env['CURSOR_HOME'] = configDir;
+    env['CLAUDE_CONFIG_DIR'] = configDir;
+    env['XDG_CONFIG_HOME'] = env['XDG_CONFIG_HOME'] || configDir + '/.config';
+    // workspace-level git identity overrides take precedence over .gitconfig user section
+    if (gitOverrides?.name) {
+      env['GIT_AUTHOR_NAME'] = gitOverrides.name;
+      env['GIT_COMMITTER_NAME'] = gitOverrides.name;
+    }
+    if (gitOverrides?.email) {
+      env['GIT_AUTHOR_EMAIL'] = gitOverrides.email;
+      env['GIT_COMMITTER_EMAIL'] = gitOverrides.email;
+    }
+    return env;
+  }
+};
+
+// --------------------------------------------- Functions ---------------------------------------------
+
+// write (or overwrite) configDir/.gitconfig with safe.directory = * and optional global user identity
+export function writeGlobalGitConfig(
+  configDir: string,
+  name: string | null,
+  email: string | null
+): void {
+  let content = '[safe]\n\tdirectory = *\n';
+  if (name || email) {
+    content += '[user]\n';
+    if (name) content += `\tname = ${name}\n`;
+    if (email) content += `\temail = ${email}\n`;
+  }
+  writeFileSync(join(configDir, '.gitconfig'), content, 'utf8');
+}
+
+const VIBE_ENV_DIR = '.vibe';
+const VIBE_ENV_FILE = '.env';
+const MISTRAL_API_KEY_VAR = 'MISTRAL_API_KEY';
+
+export function getVibeApiKeyStatus(configDir: string): { configured: boolean } {
+  const envPath = join(configDir, VIBE_ENV_DIR, VIBE_ENV_FILE);
+  if (!existsSync(envPath)) return { configured: false };
+  try {
+    const content = readFileSync(envPath, 'utf8');
+    const line = content
+      .split('\n')
+      .map((l) => l.trim())
+      .find((l) => l.startsWith(`${MISTRAL_API_KEY_VAR}=`));
+    const value = line?.slice(MISTRAL_API_KEY_VAR.length + 1).trim();
+    return { configured: !!value };
+  } catch {
+    return { configured: false };
+  }
+}
+
+export function setVibeApiKey(configDir: string, apiKey: string): void {
+  const dir = join(configDir, VIBE_ENV_DIR);
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  const envPath = join(dir, VIBE_ENV_FILE);
+  const content = `${MISTRAL_API_KEY_VAR}=${apiKey.trim()}\n`;
+  writeFileSync(envPath, content, 'utf8');
+}
+
+export function clearVibeApiKey(configDir: string): void {
+  const envPath = join(configDir, VIBE_ENV_DIR, VIBE_ENV_FILE);
+  if (!existsSync(envPath)) return;
+  writeFileSync(envPath, '', 'utf8');
+}
+
+export function isClaudeAvailable(configDir: string): boolean {
+  try {
+    const env = { ...process.env, ...config.agentEnv() };
+    const result = spawnSync(config.claudeCommand, ['--help'], {
+      encoding: 'utf8',
+      timeout: 5000,
+      cwd: configDir,
+      env,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    if (result.status !== 0) return false;
+    const out = [result.stdout, result.stderr].filter(Boolean).join('\n');
+    return out.trim().length > 0;
+  } catch {
+    return false;
+  }
+}
+
+// ── MCP client configuration (sync to Cursor & Claude) ──────────────────────
+
+export interface McpClientServerConfig {
+  type?: string;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+  headers?: Record<string, string>;
+  [key: string]: unknown;
+}
+
+const MCP_CLIENTS_FILE = 'mcp-clients.json';
+
+export function readMcpClients(configDir: string): Record<string, McpClientServerConfig> {
+  const filePath = join(configDir, MCP_CLIENTS_FILE);
+  if (!existsSync(filePath)) return {};
+  try {
+    const raw = readFileSync(filePath, 'utf8');
+    const data = JSON.parse(raw);
+    return data && typeof data === 'object' && !Array.isArray(data) ? data : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Shape MCP entries for agent configs (Claude Code expects type on HTTP servers). */
+function normalizeMcpServersForAgents(
+  servers: Record<string, McpClientServerConfig>
+): Record<string, McpClientServerConfig> {
+  const out: Record<string, McpClientServerConfig> = {};
+  for (const [name, s] of Object.entries(servers)) {
+    const copy: McpClientServerConfig = { ...s };
+    if (copy.url && !copy.command && copy.type === undefined) {
+      copy.type = 'http';
+    }
+    out[name] = copy;
+  }
+  return out;
+}
+
+/**
+ * Persist MCP client servers for all workspaces: canonical JSON plus files agents read.
+ * - Cursor: /config/.cursor/mcp.json (CURSOR_HOME is /config)
+ * - Claude Code: merge mcpServers into /config/.claude.json (user scope, all projects)
+ */
+export function writeMcpClients(
+  configDir: string,
+  servers: Record<string, McpClientServerConfig>
+): void {
+  writeFileSync(join(configDir, MCP_CLIENTS_FILE), JSON.stringify(servers, null, 2), 'utf8');
+
+  const normalized = normalizeMcpServersForAgents(servers);
+  const payload = JSON.stringify({ mcpServers: normalized }, null, 2) + '\n';
+
+  const cursorDir = join(configDir, '.cursor');
+  if (!existsSync(cursorDir)) mkdirSync(cursorDir, { recursive: true });
+  writeFileSync(join(cursorDir, 'mcp.json'), payload, 'utf8');
+
+  mergeMcpServersIntoClaudeJson(configDir, normalized);
+}
+
+function mergeMcpServersIntoClaudeJson(
+  configDir: string,
+  servers: Record<string, McpClientServerConfig>
+): void {
+  const path = join(configDir, '.claude.json');
+  let data: Record<string, unknown> = {};
+  if (existsSync(path)) {
+    try {
+      const raw = readFileSync(path, 'utf8');
+      if (raw.trim()) {
+        const parsed: unknown = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          data = parsed as Record<string, unknown>;
+        }
+      }
+    } catch {
+      data = {};
+    }
+  }
+
+  const prevRaw = data.mcpServers;
+  const prev: Record<string, unknown> =
+    prevRaw && typeof prevRaw === 'object' && !Array.isArray(prevRaw)
+      ? (prevRaw as Record<string, unknown>)
+      : {};
+
+  const merged: Record<string, unknown> = {};
+  for (const [name, cfg] of Object.entries(servers)) {
+    const existing = prev[name];
+    if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
+      merged[name] = { ...(existing as Record<string, unknown>), ...cfg };
+    } else {
+      merged[name] = cfg;
+    }
+  }
+
+  data.mcpServers = merged;
+  writeFileSync(path, JSON.stringify(data, null, 2), 'utf8');
+}
+
+// ensures /config/.claude.json has hasCompletedOnboarding = true
+export function markClaudeOnboardingComplete(configDir: string): void {
+  const path = join(configDir, '.claude.json');
+  let data: unknown = {};
+  if (existsSync(path)) {
+    try {
+      const raw = readFileSync(path, 'utf8');
+      if (raw.trim()) {
+        data = JSON.parse(raw);
+      }
+    } catch {
+      data = {};
+    }
+  }
+  if (!data || typeof data !== 'object') {
+    data = {};
+  }
+  const obj = data as Record<string, unknown>;
+  if (obj.hasCompletedOnboarding === true) {
+    return;
+  }
+  obj.hasCompletedOnboarding = true;
+  writeFileSync(path, JSON.stringify(obj, null, 2), 'utf8');
+}

@@ -1,0 +1,165 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                  String             @id
+  username            String             @unique
+  passwordHash        String             @map("password_hash")
+  createdAt           String             @map("created_at")
+  gitUserName         String?            @map("git_user_name")
+  gitUserEmail        String?            @map("git_user_email")
+  theme               String?            @map("theme")
+  autoTheme           Boolean            @default(false) @map("auto_theme")
+  darkTheme           String?            @map("dark_theme")
+  lightTheme          String?            @map("light_theme")
+  modelSelection      String             @default("auto") @map("model_selection")
+  claudeToken         String?            @map("claude_token")
+  apiTokens           ApiToken[]
+  pushSubscriptions   PushSubscription[]
+  
+  @@map("users")
+}
+
+model PushSubscription {
+  id        String @id
+  userId    String @map("user_id")
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String @unique
+  p256dh    String
+  auth      String
+  createdAt String @map("created_at")
+
+  @@map("push_subscriptions")
+}
+
+model ApiToken {
+  id          String   @id
+  userId      String   @map("user_id")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  tokenHash   String   @unique @map("token_hash")
+  tokenPrefix String   @map("token_prefix")
+  createdAt   String   @map("created_at")
+  lastUsedAt  String?  @map("last_used_at")
+
+  @@map("api_tokens")
+}
+
+model Workspace {
+  id           String        @id
+  name         String
+  path         String
+  group        String?       @map("workspace_group")
+  createdAt    String        @map("created_at")
+  gitUserName  String?       @map("git_user_name")
+  gitUserEmail String?       @map("git_user_email")
+  color        String?
+  sortOrder    Int?          @map("sort_order")
+  defaultAgentType String?    @map("default_agent_type")
+  tags           Json?       // string[] stored as JSON
+  archived     Boolean       @default(false)
+  sessions     Session[]
+  orchestrators Orchestrator[]
+  automations  Automation[]
+
+  @@map("workspaces")
+}
+
+model Session {
+  id          String    @id
+  name        String
+  tags        String?
+  sessionId   String?   @map("session_id")
+  agentType   String    @map("agent_type")
+  messageJson String    @map("message_json")
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  promptQueue SessionPromptQueue[]
+  createdAt   String    @map("created_at")
+  updatedAt   String    @default(dbgenerated("CURRENT_TIMESTAMP")) @map("updated_at")
+  archived    Boolean   @default(false)
+
+  @@map("sessions")
+}
+
+model SessionPromptQueue {
+  id         String  @id
+  sessionId  String  @map("session_id")
+  session    Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  text       String
+  model      String  @default("auto")
+  imagePaths String? @map("image_paths_json")
+  position   Int
+  createdAt  String  @map("created_at")
+
+  @@index([sessionId, position, createdAt], map: "idx_session_prompt_queue_session_position")
+  @@map("session_prompt_queue")
+}
+
+model Orchestrator {
+  id              String    @id
+  name            String
+  tags            String?
+  agentType       String    @default("cursor-agent") @map("agent_type")
+  messageJson     String    @map("message_json")
+  subtasksJson    String?   @map("subtasks_json")
+  workspaceId     String
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdAt       String    @map("created_at")
+  updatedAt       String    @default(dbgenerated("CURRENT_TIMESTAMP")) @map("updated_at")
+  runStatus       String?   @map("run_status")
+  runCurrentStep  Int?      @map("run_current_step")
+  runTotalSteps   Int?      @map("run_total_steps")
+  runStartedAt    String?   @map("run_started_at")
+
+  @@map("orchestrators")
+}
+
+model RoleTemplate {
+  id          String   @id
+  name        String   @unique
+  description String?
+  content     String
+  createdAt   String   @map("created_at")
+  updatedAt   String   @default(dbgenerated("CURRENT_TIMESTAMP")) @map("updated_at")
+
+  @@map("role_templates")
+}
+
+model Automation {
+  id              String          @id
+  name            String
+  workspaceId     String          @map("workspace_id")
+  workspace       Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  agentType       String          @default("cursor-agent") @map("agent_type")
+  prompt          String
+  intervalMinutes Int             @map("interval_minutes")
+  enabled         Boolean         @default(true)
+  createdAt       String          @map("created_at")
+  updatedAt       String          @default(dbgenerated("CURRENT_TIMESTAMP")) @map("updated_at")
+  nextRunAt       String?         @map("next_run_at")
+  lastRunAt       String?         @map("last_run_at")
+  runs            AutomationRun[]
+
+  @@map("automations")
+}
+
+model AutomationRun {
+  id           String     @id
+  automationId String     @map("automation_id")
+  automation   Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  startedAt    String     @map("started_at")
+  finishedAt   String?    @map("finished_at")
+  status       String     // "running" | "completed" | "failed"
+  agentResponse String?   @map("agent_response")
+  changedFiles  String?   @map("changed_files") // json array of { status, file }
+  error        String?
+
+  @@map("automation_runs")
+}

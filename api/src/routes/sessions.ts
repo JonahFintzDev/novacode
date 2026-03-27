@@ -1,0 +1,196 @@
+// node_modules
+import { FastifyInstance } from 'fastify';
+
+// classes
+import { db } from '../classes/database';
+import { jwtPreHandler } from '../classes/auth';
+import { createSessionWithAgent } from '../classes/sessionService';
+import { getActiveSessionIds } from './chat';
+import { deleteSessionImages } from './images';
+import {
+  broadcastWorkspaceSessionDeleted,
+  broadcastWorkspaceSessionUpsert,
+  broadcastWorkspaceSessionsRefresh
+} from './ws';
+
+// types
+import type { AgentType } from '../@types/index';
+
+export async function sessionsRoutes(fastify: FastifyInstance): Promise<void> {
+  // GET /api/sessions
+  fastify.get('/api/sessions', { preHandler: jwtPreHandler }, async (_request, reply) => {
+    const busyIds = getActiveSessionIds();
+    const allWorkspaces = await db.listWorkspaces({ includeArchived: true });
+    const byWorkspace = await Promise.all(
+      allWorkspaces.map((w) =>
+        Promise.all([
+          db.listSessionsByWorkspace(w.id, { archived: false }),
+          db.listSessionsByWorkspace(w.id, { archived: true })
+        ])
+      )
+    );
+    const allSessions = byWorkspace
+      .flatMap(([active, archived]) => [...active, ...archived])
+      .map((s) => ({ ...s, busy: busyIds.has(s.id) }));
+    return reply.send(allSessions);
+  });
+
+  // POST /api/workspaces/:workspaceId/sessions
+  fastify.post(
+    '/api/workspaces/:workspaceId/sessions',
+    { preHandler: jwtPreHandler },
+    async (request, reply) => {
+      const { workspaceId } = request.params as { workspaceId: string };
+      const body = request.body as {
+        name: string;
+        tags?: string | null;
+        agentType?: AgentType;
+      };
+
+      const result = await createSessionWithAgent({
+        workspaceId,
+        name: body.name,
+        tags: body.tags ?? null,
+        agentType: body.agentType
+      });
+
+      if (result.error) {
+        const status = result.error === 'Workspace not found' ? 404 : 502;
+        return reply.status(status).send({
+          error: result.error === 'Workspace not found' ? result.error : 'Failed to create chat',
+          ...(status === 502 ? { details: result.error } : {})
+        });
+      }
+
+      // notify workspace subscribers
+      broadcastWorkspaceSessionUpsert(workspaceId, result.session);
+      return reply.status(201).send(result.session);
+    }
+  );
+
+  // GET /api/workspaces/:workspaceId/sessions
+  fastify.get(
+    '/api/workspaces/:workspaceId/sessions',
+    { preHandler: jwtPreHandler },
+    async (request, reply) => {
+      const { workspaceId } = request.params as { workspaceId: string };
+      const query = request.query as { archived?: string };
+      const archived =
+        query.archived === 'true' ? true : query.archived === 'false' ? false : undefined;
+      const sessions = await db.listSessionsByWorkspace(workspaceId, { archived });
+      const busyIds = getActiveSessionIds();
+      const enriched = sessions.map((s) => ({ ...s, busy: busyIds.has(s.id) }));
+      return reply.send(enriched);
+    }
+  );
+
+  // GET /api/workspaces/:workspaceId/sessions/:sessionId
+  fastify.get(
+    '/api/workspaces/:workspaceId/sessions/:sessionId',
+    { preHandler: jwtPreHandler },
+    async (request, reply) => {
+      const { workspaceId, sessionId } = request.params as {
+        workspaceId: string;
+        sessionId: string;
+      };
+      const session = await db.getSession(sessionId);
+      if (!session || session.workspaceId !== workspaceId) {
+        return reply.status(404).send({ error: 'Session not found' });
+      }
+      return reply.send(session);
+    }
+  );
+
+  // PATCH /api/workspaces/:workspaceId/sessions/:sessionId
+  fastify.patch(
+    '/api/workspaces/:workspaceId/sessions/:sessionId',
+    { preHandler: jwtPreHandler },
+    async (request, reply) => {
+      const { workspaceId, sessionId } = request.params as {
+        workspaceId: string;
+        sessionId: string;
+      };
+      const body = request.body as {
+        name?: string;
+        tags?: string | null;
+        archived?: boolean;
+      };
+      const session = await db.getSession(sessionId);
+      if (!session || session.workspaceId !== workspaceId) {
+        return reply.status(404).send({ error: 'Session not found' });
+      }
+      const patch: {
+        name?: string;
+        tags?: string | null;
+        archived?: boolean;
+      } = {};
+      if (body.name !== undefined) patch.name = body.name;
+      if ('tags' in (request.body as object)) patch.tags = body.tags ?? null;
+      if (body.archived !== undefined) patch.archived = body.archived;
+      const updated = await db.updateSession(sessionId, patch);
+      if (!updated) {
+        return reply.status(500).send({ error: 'Failed to update session' });
+      }
+      broadcastWorkspaceSessionUpsert(workspaceId, updated);
+      return reply.send(updated);
+    }
+  );
+
+  // POST /api/workspaces/:workspaceId/sessions/bulk-delete
+  fastify.post(
+    '/api/workspaces/:workspaceId/sessions/bulk-delete',
+    { preHandler: jwtPreHandler },
+    async (request, reply) => {
+      const { workspaceId } = request.params as { workspaceId: string };
+      const { ids } = request.body as { ids: string[] };
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return reply.status(400).send({ error: 'ids must be a non-empty array' });
+      }
+      const count = await db.deleteManySessions(ids, workspaceId);
+      // clean up uploaded images for each session (non-critical)
+      await Promise.all(ids.map((id) => deleteSessionImages(id)));
+      broadcastWorkspaceSessionsRefresh(workspaceId);
+      return reply.send({ deleted: count });
+    }
+  );
+
+  // POST /api/workspaces/:workspaceId/sessions/bulk-archive
+  fastify.post(
+    '/api/workspaces/:workspaceId/sessions/bulk-archive',
+    { preHandler: jwtPreHandler },
+    async (request, reply) => {
+      const { workspaceId } = request.params as { workspaceId: string };
+      const { ids, archived } = request.body as { ids: string[]; archived: boolean };
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return reply.status(400).send({ error: 'ids must be a non-empty array' });
+      }
+      const count = await db.archiveManySessions(ids, workspaceId, archived);
+      broadcastWorkspaceSessionsRefresh(workspaceId);
+      return reply.send({ updated: count });
+    }
+  );
+
+  // DELETE /api/workspaces/:workspaceId/sessions/:sessionId
+  fastify.delete(
+    '/api/workspaces/:workspaceId/sessions/:sessionId',
+    { preHandler: jwtPreHandler },
+    async (request, reply) => {
+      const { workspaceId, sessionId } = request.params as {
+        workspaceId: string;
+        sessionId: string;
+      };
+      const session = await db.getSession(sessionId);
+      if (!session || session.workspaceId !== workspaceId) {
+        return reply.status(404).send({ error: 'Session not found' });
+      }
+      const success = await db.deleteSession(sessionId);
+      if (!success) {
+        return reply.status(500).send({ error: 'Failed to delete session' });
+      }
+      // clean up uploaded images for this session (non-critical)
+      await deleteSessionImages(sessionId);
+      broadcastWorkspaceSessionDeleted(workspaceId, sessionId);
+      return reply.status(204).send();
+    }
+  );
+}

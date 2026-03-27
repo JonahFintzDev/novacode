@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "sessions" ADD COLUMN     "updated_at" TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP;

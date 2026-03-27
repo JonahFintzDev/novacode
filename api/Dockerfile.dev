@@ -1,0 +1,38 @@
+FROM node:24
+
+# Install Claude Code and Cursor Agent CLIs (same as production image)
+RUN npm install -g @anthropic-ai/claude-code
+
+# Install Cursor agent CLI
+RUN curl https://cursor.com/install -fsS | bash
+
+# Install Mistral Vibe CLI
+RUN curl -LsSf https://mistral.ai/vibe/install.sh | bash
+
+# install gosu and other base tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git curl bash gosu \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PATH="/usr/local/bin:${PATH}"
+ENV PATH="/root/.local/bin:${PATH}"
+
+
+WORKDIR /app
+
+# Build context is repo root (same as production Dockerfile)
+COPY api/package*.json ./
+RUN npm ci
+
+COPY api/tsconfig.json ./
+COPY api/docker-entrypoint.dev.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+## generate prisma client
+COPY api/prisma ./prisma
+COPY api/prisma.config.ts ./prisma.config.ts
+RUN npx prisma generate
+
+EXPOSE 3000
+ENTRYPOINT ["/docker-entrypoint.sh"]
+CMD ["npm", "run", "dev"]

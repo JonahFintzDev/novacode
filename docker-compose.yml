@@ -1,0 +1,45 @@
+# Entrypoint chowns /config to host UID/GID and runs the app as that user.
+# Set in .env or export: UID=$(id -u) GID=$(id -g)
+services:
+  novacode:
+    build: .
+    ports:
+      - "3030:3030"
+      - "3100:3100"
+    env_file:
+      - .env
+    restart: unless-stopped
+    networks: 
+      - novacode
+    environment:
+      UID: ${UID}
+      GID: ${GID}
+      JWT_SECRET: ${JWT_SECRET}
+      PORT: ${PORT}
+      MCP_PORT: ${MCP_PORT}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+    volumes:
+      - ~/.novacode/config:/config
+      - ~/.novacode/data:/data-root
+  postgres:
+    image: postgres:17
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - novacode-postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - novacode
+volumes:
+  novacode-postgres-data:
+networks:
+  novacode:
+    driver: bridge

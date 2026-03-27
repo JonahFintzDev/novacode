@@ -1,0 +1,20 @@
+node_modules/
+dist/
+build/
+.env
+*.log
+.DS_Store
+dashboard/node_modules/
+api/node_modules/
+api/build/
+dashboard/dist/
+data/
+config/
+api/dev.db
+api/prisma/dev.db
+api/src/generated/
+local.docker-compose.yml
+
+# Affinity / Dropbox lock artifacts (dashboard public assets)
+**/logo.af~lock~
+**/logo.af~lock~:com.dropbox.ignored
