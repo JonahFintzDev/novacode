@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // node_modules
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 
 // types
 import type { AgentType } from '@/@types/index';
@@ -52,8 +52,12 @@ const close = (): void => {
   if (!props.loading) emit('update:modelValue', false);
 };
 
+const canCreate = computed(
+  () => props.claudeAvailable !== false || props.cursorAvailable !== false
+);
+
 const onCreate = (): void => {
-  if (props.loading) return;
+  if (props.loading || !canCreate.value) return;
   const finalName = name.value.trim() || defaultName.value;
   const t = tags.value.trim() || null;
   emit('create', {
@@ -164,6 +168,12 @@ const onCreate = (): void => {
               >
                 Claude is not configured for this server or user.
               </p>
+              <p
+                v-if="!canCreate"
+                class="text-[11px] text-warning"
+              >
+                Configure Cursor or Claude in Settings before creating an orchestrator.
+              </p>
             </div>
           </div>
 
@@ -179,7 +189,7 @@ const onCreate = (): void => {
             <button
               type="submit"
               class="flex items-center gap-2 px-4 py-2.5 text-sm font-medium bg-primary hover:bg-primary-hover text-white rounded-lg shadow-lg shadow-primary/20 transition-all disabled:opacity-50"
-              :disabled="loading"
+              :disabled="loading || !canCreate"
             >
               <div
                 v-if="loading"

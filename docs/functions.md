@@ -8,7 +8,7 @@ This document describes what the application **does today** (backend API, dashbo
 
 NovaCode is a **self-hosted web application** for managing **AI coding agent** workflows: **Cursor Agent** and **Claude Code**. You organize work in **workspaces** (directories on disk), open **sessions** tied to a workspace and agent, and interact through a **chat UI** (with streaming), **terminal output** where applicable, and supporting tools for **Git**, **files**, and **workspace rules**.
 
-Optional features include **multi-step orchestration** (“orchestrator”), **scheduled automations**, **role templates**, **browser push notifications**, and an optional **MCP (Model Context Protocol) server** for integrations.
+Optional features include **scheduled automations**, **role templates**, and **browser push notifications**.
 
 ---
 
@@ -48,7 +48,7 @@ Optional features include **multi-step orchestration** (“orchestrator”), **s
 
 - **Streaming chat**: WebSocket connection at `/api/ws/chat/:id` (with token) for streaming agent output and chat events.
 - **Chat engine**: Coordinates **active runs**, subscribers, **prompt dispatch**, cancellation, and persistence of **message history** (including streaming JSON lines from agents).
-- **Workspace rules injection**: When building prompts, the server can prepend content from **workspace rule files** (see §8) so agents follow project-specific instructions.
+- **Workspace rules injection**: When building prompts, the server can prepend content from **workspace rule files** (see §7) so agents follow project-specific instructions.
 
 ---
 
@@ -60,23 +60,14 @@ Optional features include **multi-step orchestration** (“orchestrator”), **s
 
 ---
 
-## 7. Orchestrator (multi-step plans)
-
-- **Orchestrator** entities belong to a workspace and store **subtasks** (JSON), **messages**, **agent type**, **tags**, and **run state** (status, current step, total steps, timestamps).
-- **Planning**: LLM-assisted **decomposition** of a goal into independent subtasks (each subtask is intended to run in isolation with a full prompt).
-- **Execution**: Runs steps sequentially (or as implemented in `orchestrator` routes + `chatEngine`), with progress tracked in the database.
-- **Recovery**: On server start, stale “running” orchestrator runs can be marked failed from a previous process crash.
-
----
-
-## 8. Workspace rules (files)
+## 7. Workspace rules (files)
 
 - **CRUD** for rule **files** under a workspace-specific rules directory (see `workspaceRules` class): list, read, write, delete, rename.
 - Rules are **injected into chat** context via a prefix built from those files (see `buildWorkspaceRulesPrefix` in `chatEngine`).
 
 ---
 
-## 9. Git integration
+## 8. Git integration
 
 - **Repository discovery** under the workspace (nested repos, depth limits, skip directories like `node_modules`).
 - **Status**: Per-repo file status, ahead counts, etc.
@@ -84,14 +75,14 @@ Optional features include **multi-step orchestration** (“orchestrator”), **s
 
 ---
 
-## 10. File browser
+## 9. File browser
 
 - **List** directory contents and **read/write** text files **within the workspace** path only (path traversal checks).
 - Used by the dashboard **Files** view for the workspace.
 
 ---
 
-## 11. Automations
+## 10. Automations
 
 - **Automations** are tied to a workspace: **name**, **agent type**, **prompt**, **interval** (minutes), **enabled**, **next run** / **last run**.
 - A **scheduler** runs due automations; each run records **AutomationRun** (status, agent response, changed files, errors).
@@ -99,63 +90,55 @@ Optional features include **multi-step orchestration** (“orchestrator”), **s
 
 ---
 
-## 12. Role templates
+## 11. Role templates
 
 - Global **templates** (name, description, content); create, update, delete, list via `/api/role-templates`.
 - In the **Rules** UI, templates can be used as a starting point when **creating a new workspace rule file** (so shared boilerplate does not need to be retyped).
 
 ---
 
-## 13. Settings (user and app)
+## 12. Settings (user and app)
 
 - **Git**: Global default `gitUserName` / `gitUserEmail` written to `/config/.gitconfig` (with `safe.directory = *`).
 - **UI**: **Theme** (including **auto theme** and separate dark/light theme presets), **model selection** (e.g. auto vs specific Cursor models).
 - **Agent capabilities**: Endpoints report whether **Claude** CLI is available and **Cursor** is authenticated.
 - **Vibe (Mistral)**: Stored API key in `.vibe/.env` under config dir when configured.
-- **MCP client config**: JSON list of MCP servers/clients for tooling integration (read/write via settings).
+- **MCP client config**: External MCP servers (stdio or HTTP) for Cursor / Claude; persisted as `mcp-clients.json` and synced to `.cursor/mcp.json` and `mcpServers` in `.claude.json` (read/write via settings API).
 - **Claude token**: Optional stored token for Claude authentication.
 - **Cursor login**: Flows that spawn a PTY for `cursor-agent` login and persist auth under `config`.
 
 ---
 
-## 14. Agent authentication
+## 13. Agent authentication
 
 - **Cursor**: Status checks (`auth.json` or `cursor-agent status`); **login** creates a short-lived PTY session users can complete in the UI.
 - **Claude**: Status reflects stored token; **logout** clears stored credentials.
 
 ---
 
-## 15. Push notifications
+## 14. Push notifications
 
 - **Web Push** (VAPID): Keys are generated on first run and stored under the config directory (`vapid-keys.json`); clients can subscribe; subscriptions are stored per user.
 - **Public key** endpoint for the dashboard to register the service worker subscription.
 
 ---
 
-## 16. Optional MCP server
-
-- When `MCP_PORT` is non-zero, a separate **TCP/HTTP** MCP server starts (see `mcp/server.ts`).
-- Authenticates **Bearer** or `token` query param JWT.
-- Exposes **tools** such as listing workspaces, getting workspace details, and **creating sessions** (see `mcp/tools.ts`) so external MCP clients can orchestrate NovaCode.
-
----
-
-## 17. Health and operations
+## 15. Health and operations
 
 - **`GET /api/health`**: Unauthenticated; returns `status` (`ok` / `degraded`), **uptime**, and **dbOk** after a simple DB check.
-- **Graceful shutdown**: On `SIGTERM`/`SIGINT`, broadcasts **server-shutdown** over WebSockets, stops automation scheduler, waits briefly, stops auth PTYs, closes Fastify.
+- **Graceful shutdown**: On `SIGTERM`/`SIGINT`, broadcasts **server-shutdown** over WebSockets, stops the automation scheduler, waits briefly, stops auth PTYs, closes Fastify.
 
 ---
 
-## 18. Dashboard (Vue)
+## 16. Dashboard (Vue)
 
-- **Views**: Home (workspace list), workspace detail (sessions list, **Files**, **Git**, **Rules**), **Session** (chat + orchestrator UI), **Automations**, **Role templates**, **Settings**, **Account**, **Login**, **Setup**.
+- **Views**: Home (workspace list), workspace detail (sessions list, **Files**, **Git**, **Rules**), **Session** (chat), **Automations**, **Role templates**, **Settings**, **Account**, **Login**, **Setup**.
 - **PWA**: Service worker (`sw.ts`) and Vite PWA plugin for installable/offline-capable behavior where configured.
 - **Terminal**: **xterm.js** for terminal rendering in the session experience.
 
 ---
 
-## 19. Stack summary
+## 17. Stack summary
 
 | Layer        | Technology |
 |-------------|------------|
@@ -166,6 +149,6 @@ Optional features include **multi-step orchestration** (“orchestrator”), **s
 
 ---
 
-## 20. Related documents
+## 18. Related documents
 
 - `FEATURES.md` in the repo root lists **ideas and future improvements**; it is **not** a guarantee of current behavior.

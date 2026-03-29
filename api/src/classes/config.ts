@@ -21,9 +21,6 @@ export const config = {
   /** Root directory on the host; workspace paths are relative to this. */
   workspaceBrowseRoot: '/data-root',
 
-  // MCP server (optional): TCP port for MCP transport; 0 = disabled
-  mcpPort: parseInt(optional('MCP_PORT', '0'), 10),
-
   // env vars forwarded to spawned agent processes
   agentEnv: (gitOverrides?: { name?: string; email?: string }) => {
     const configDir = config.configDir;

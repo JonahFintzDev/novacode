@@ -685,8 +685,8 @@ onBeforeUnmount(() => {
     </button>
   </div>
 
-  <!-- Top: view mode selector + new session button -->
-  <div class="flex justify-between sm:justify-end mb-3">
+  <!-- Top: view mode selector + new session / orchestrator -->
+  <div class="flex flex-wrap justify-between sm:justify-end gap-y-2 mb-3">
     <div class="button-select-small mr-2 mt-0">
       <button
         class="button is-icon"
@@ -703,8 +703,16 @@ onBeforeUnmount(() => {
         <span class="material-symbols-outlined">grid_view</span>
       </button>
     </div>
-    <div class="flex items-center gap-2 shrink-0">
-      <button @click="showNewSessionModal = true" class="button is-primary">
+    <div class="flex flex-wrap items-center gap-2 shrink-0">
+      <button
+        type="button"
+        class="button"
+        @click="showNewOrchestratorModal = true"
+      >
+        <span class="material-symbols-outlined">account_tree</span>
+        New orchestrator
+      </button>
+      <button type="button" @click="showNewSessionModal = true" class="button is-primary">
         <span class="material-symbols-outlined">add</span>
         New Session
       </button>

@@ -1,7 +1,7 @@
 // node_modules
 import { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import jwt from 'jsonwebtoken';
-import { timingSafeEqual, scryptSync, randomBytes, createHash } from 'node:crypto';
+import { timingSafeEqual, scryptSync, randomBytes } from 'node:crypto';
 
 // classes
 import { config } from './config';
@@ -17,22 +17,7 @@ interface JwtPayload {
   exp: number;
 }
 
-const API_TOKEN_PREFIX = 'aiw_';
-const API_TOKEN_BYTES = 32;
-
 // --------------------------------------------- Functions ---------------------------------------------
-
-export function generateApiToken(): string {
-  return API_TOKEN_PREFIX + randomBytes(API_TOKEN_BYTES).toString('hex');
-}
-
-export function hashApiToken(token: string): string {
-  return createHash('sha256').update(token, 'utf8').digest('hex');
-}
-
-export function tokenDisplayPrefix(token: string, length = 12): string {
-  return token.slice(0, length);
-}
 
 async function getJwtSecret(): Promise<string> {
   if (!config.jwtSecret) {
@@ -126,7 +111,7 @@ export function extractBearerToken(request: FastifyRequest): string | null {
   return header.slice(7);
 }
 
-// validates JWT or API token and attaches user info to the request
+// validates JWT and attaches user info to the request
 export async function jwtPreHandler(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   const token = extractBearerToken(request);
   if (!token) {
@@ -147,21 +132,9 @@ export async function jwtPreHandler(request: FastifyRequest, reply: FastifyReply
     request.jwtUser = { id: user.id, username: user.username };
     return;
   } catch {
-    // not a JWT; try API token
-  }
-  const tokenHash = hashApiToken(token);
-  const apiToken = await db.getApiTokenByHash(tokenHash);
-  if (!apiToken) {
     await reply.code(401).send({ error: 'Invalid or expired token' });
     return;
   }
-  const user = await db.getUserById(apiToken.userId);
-  if (!user) {
-    await reply.code(401).send({ error: 'Invalid or expired token' });
-    return;
-  }
-  request.jwtUser = { id: user.id, username: user.username };
-  await db.updateApiTokenLastUsed(apiToken.id, apiToken.userId);
 }
 
 export function registerAuth(fastify: FastifyInstance): void {

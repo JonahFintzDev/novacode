@@ -120,6 +120,18 @@ const lightboxSrc = ref<string | null>(null);
 const showScrollToBottom = ref(false);
 const modelSelection = ref<string>('auto');
 const showModelSelector = ref(false);
+
+const HIDE_THINKING_LS_KEY = 'nova:chat:hideThinkingOutput';
+
+function readHideThinkingFromLs(): boolean {
+  try {
+    return localStorage.getItem(HIDE_THINKING_LS_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+const hideThinkingOutput = ref(readHideThinkingFromLs());
 const availableModels = ref<CursorModelOption[]>([]);
 const modelsLoading = ref(false);
 const queuedPrompts = ref<ChatQueueItem[]>([]);
@@ -248,6 +260,17 @@ async function onModelChange(newModel: string) {
   }
 }
 
+function onHideThinkingToggle(checked: boolean): void {
+  hideThinkingOutput.value = checked;
+  if (checked) streamingThinkingText.value = '';
+  try {
+    if (checked) localStorage.setItem(HIDE_THINKING_LS_KEY, '1');
+    else localStorage.removeItem(HIDE_THINKING_LS_KEY);
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
 function openModelSettings(): void {
   void loadAvailableModels();
   showModelSelector.value = true;
@@ -369,6 +392,7 @@ function processEventLine(
   if (event.type === 'thinking') {
     if (
       opts?.liveThinking &&
+      !hideThinkingOutput.value &&
       event.subtype === 'delta' &&
       typeof event.text === 'string'
     ) {
@@ -518,20 +542,7 @@ async function scrollToBottomIfPinned() {
   if (isScrolledToBottom()) await scrollToBottom();
 }
 
-/** Block wheel scrolling while streaming; must use { passive: false } (see watch below). */
-function streamLockWheel(e: WheelEvent) {
-  e.preventDefault();
-}
-
 function onMessagesScroll() {
-  if (isStreaming.value) {
-    const el = messagesEl.value;
-    if (el && !isScrolledToBottom()) {
-      el.scrollTop = el.scrollHeight;
-    }
-    showScrollToBottom.value = false;
-    return;
-  }
   showScrollToBottom.value = !isScrolledToBottom();
   if (!hasMore.value || loadingMore.value) return;
   if (messagesEl.value && messagesEl.value.scrollTop < 100) {
@@ -594,7 +605,7 @@ function connectChatWs() {
             imagePaths: prompt.imagePaths?.length ? prompt.imagePaths : undefined,
             createdAt: prompt.createdAt
           });
-          void scrollToBottom();
+          void scrollToBottomIfPinned();
         }
       } else if (msg.type === 'stream') {
         isStreaming.value = true;
@@ -610,7 +621,7 @@ function connectChatWs() {
             }
           }
         }
-        void scrollToBottom();
+        void scrollToBottomIfPinned();
       } else if (msg.type === 'done') {
         const lastAssistantMessage = latestAssistantText(streamingItems.value);
         const events = [...streamingRawLines];
@@ -855,18 +866,6 @@ watch(
   }
 );
 
-watch(isStreaming, async (streaming) => {
-  await nextTick();
-  const el = messagesEl.value;
-  if (!el) return;
-  el.removeEventListener('wheel', streamLockWheel);
-  if (streaming) {
-    showScrollToBottom.value = false;
-    el.addEventListener('wheel', streamLockWheel, { passive: false });
-    void scrollToBottom();
-  }
-});
-
 onMounted(async () => {
   wsUnmounted = false;
   chatInputMql = window.matchMedia('(min-width: 768px)');
@@ -891,7 +890,6 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
-  messagesEl.value?.removeEventListener('wheel', streamLockWheel);
   wsUnmounted = true;
   if (chatInputMql) {
     chatInputMql.removeEventListener('change', syncChatInputBreakpoint);
@@ -1045,7 +1043,6 @@ onUnmounted(() => {
         <div
           ref="messagesEl"
           class="flex-1 overflow-y-auto px-4 md:px-6 py-4 space-y-3 min-h-0"
-          :class="isStreaming ? 'overscroll-contain' : ''"
           @scroll="onMessagesScroll"
         >
           <!-- Chat skeleton -->
@@ -1355,7 +1352,10 @@ onUnmounted(() => {
                 </div>
               </template>
               <!-- Model thinking (Cursor stream-json): keep visible until the turn ends (not busy) -->
-              <div v-if="streamingThinkingText.trim()" class="flex justify-start">
+              <div
+                v-if="streamingThinkingText.trim() && !hideThinkingOutput"
+                class="flex justify-start"
+              >
                 <div
                   class="flex h-[240px] max-w-[85%] min-h-0 flex-col overflow-hidden rounded-xl border border-fg/10 border-dashed bg-fg/[0.03] px-3 py-2 text-xs text-text-muted"
                 >
@@ -1382,7 +1382,10 @@ onUnmounted(() => {
               </div>
               <!-- Thinking indicator (no streamed content yet) -->
               <div
-                v-if="streamingItems.length === 0 && !streamingThinkingText.trim()"
+                v-if="
+                  streamingItems.length === 0 &&
+                  (!streamingThinkingText.trim() || hideThinkingOutput)
+                "
                 class="flex justify-start"
               >
                 <div class="bg-fg/[0.06] px-4 py-2 rounded-2xl rounded-bl-sm">
@@ -1548,7 +1551,6 @@ onUnmounted(() => {
                 v-if="session?.agentType !== 'claude'"
                 type="button"
                 @click="openModelSettings"
-                :disabled="isStreaming"
                 title="Model settings"
                 class="button is-transparent is-icon h-[36px]! mb-[3px]! px-0! aspect-square! shrink-0"
               >
@@ -1697,25 +1699,49 @@ onUnmounted(() => {
           >
             <div class="px-6 pt-5 pb-2">
               <h2 id="chat-model-title" class="font-semibold text-text-primary text-lg">Model</h2>
-              <p class="text-xs text-text-muted mt-1">Cursor model used for this chat session.</p>
+              <p class="text-xs text-text-muted mt-1">
+                Cursor model and chat display options for this workspace.
+              </p>
             </div>
-            <div class="px-6 pb-5">
+            <div class="px-6 pb-5 space-y-4">
+              <div>
+                <label
+                  for="model-select-modal"
+                  class="block text-xs font-medium text-text-muted mb-1.5"
+                  >Model</label
+                >
+                <select
+                  id="model-select-modal"
+                  :value="modelSelection"
+                  @change="(e) => onModelChange((e.target as HTMLSelectElement).value)"
+                  :disabled="isStreaming || modelsLoading"
+                  class="w-full text-sm px-3 py-3 rounded-lg border border-fg/[0.12] bg-fg/[0.04] text-text-primary focus:outline-none focus:border-primary/50 transition-colors disabled:opacity-50"
+                >
+                  <option v-for="m in availableModels" :key="m.id" :value="m.id">
+                    {{ m.label }}
+                  </option>
+                </select>
+              </div>
               <label
-                for="model-select-modal"
-                class="block text-xs font-medium text-text-muted mb-1.5"
-                >Model</label
+                class="flex cursor-pointer items-start gap-3 rounded-lg border border-fg/[0.12] bg-fg/[0.04] px-3 py-3 text-sm text-text-primary"
               >
-              <select
-                id="model-select-modal"
-                :value="modelSelection"
-                @change="(e) => onModelChange((e.target as HTMLSelectElement).value)"
-                :disabled="isStreaming || modelsLoading"
-                class="w-full text-sm px-3 py-3 rounded-lg border border-fg/[0.12] bg-fg/[0.04] text-text-primary focus:outline-none focus:border-primary/50 transition-colors disabled:opacity-50"
-              >
-                <option v-for="m in availableModels" :key="m.id" :value="m.id">
-                  {{ m.label }}
-                </option>
-              </select>
+                <input
+                  id="hide-thinking-modal"
+                  type="checkbox"
+                  class="mt-0.5 h-4 w-4 shrink-0 rounded border-fg/[0.2] text-primary focus:ring-primary/40"
+                  :checked="hideThinkingOutput"
+                  @change="
+                    onHideThinkingToggle(($event.target as HTMLInputElement).checked)
+                  "
+                />
+                <span class="min-w-0">
+                  <span class="font-medium text-text-primary">Hide thinking output</span>
+                  <span class="mt-0.5 block text-xs text-text-muted leading-snug">
+                    When enabled, Cursor reasoning streams are not shown in the chat (saved in this
+                    browser only).
+                  </span>
+                </span>
+              </label>
             </div>
             <div class="flex items-center justify-end gap-2 px-6 pb-5">
               <button

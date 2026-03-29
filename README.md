@@ -25,11 +25,6 @@ Run [Cursor Agent](https://cursor.com) and [Claude Code](https://claude.ai/code)
   <br><em>Session view — streaming chat alongside a live terminal</em>
 </p>
 
-<p align="center">
-  <img src="docs/screenshots/orchestrator.png" alt="Orchestrator" width="90%">
-  <br><em>Orchestrator — break big tasks into parallel agent steps</em>
-</p>
-
 > **Screenshots are placeholders.** Replace the images in `docs/screenshots/` with real ones before publishing.
 
 ---
@@ -41,7 +36,6 @@ Run [Cursor Agent](https://cursor.com) and [Claude Code](https://claude.ai/code)
 | **Workspaces** | Map any directory on your host to a named project. Group, color-code, tag, and archive. |
 | **Sessions** | Start a Cursor Agent or Claude Code session per workspace. Streaming chat over WebSocket, image attachments, tags, archive. |
 | **Terminal** | Full PTY-backed terminal output via `node-pty` and xterm.js. |
-| **Orchestrator** | Decompose a goal into subtasks with LLM planning, then run each step sequentially with live progress. |
 | **Automations** | Schedule recurring agent prompts per workspace (cron-style intervals). |
 | **Git** | Per-workspace Git status, diffs, and multi-repo discovery — right in the UI. |
 | **File browser** | Browse and read/write files inside a workspace without leaving the app. |
@@ -49,7 +43,6 @@ Run [Cursor Agent](https://cursor.com) and [Claude Code](https://claude.ai/code)
 | **Role templates** | Reusable instruction snippets for bootstrapping new rule files. |
 | **API tokens** | Generate static tokens for programmatic or CI/CD access. |
 | **Web Push** | Browser notifications when sessions produce output; VAPID keys are created automatically in the config volume. |
-| **MCP server** | Optional Model Context Protocol server so external tools can create sessions and query workspaces. |
 | **Health endpoint** | `GET /api/health` — unauthenticated, ready for Docker `HEALTHCHECK` and uptime monitors. |
 
 ---
@@ -140,7 +133,6 @@ Copy `.env.example` to `.env` and edit the values below.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `3030` | HTTP port the API listens on |
-| `MCP_PORT` | `3100` | Port for the optional MCP server — set to `0` to disable |
 | `UID` / `GID` | `1000` | Host user/group for files written inside the container |
 
 ### Optional
@@ -247,8 +239,7 @@ app/
 ├── api/                  # Fastify backend (TypeScript)
 │   ├── src/
 │   │   ├── classes/      # DB, auth, config, PTY, chat engine, …
-│   │   ├── routes/       # REST + WebSocket route handlers
-│   │   └── mcp/          # Optional MCP server
+│   │   └── routes/       # REST + WebSocket route handlers
 │   └── prisma/           # Schema + migrations
 ├── dashboard/            # Vue 3 frontend (Vite + Tailwind)
 │   └── src/

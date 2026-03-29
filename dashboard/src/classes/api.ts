@@ -1,11 +1,14 @@
 // node_modules
-import axios from 'axios';
+import axios, { isAxiosError } from 'axios';
+import { getActivePinia } from 'pinia';
+
+// stores
+import { useApiHealthStore } from '@/stores/apiHealth';
 
 // types
 import type {
   Workspace,
   AppSettings,
-  ApiToken,
   McpClientServer,
   CreateWorkspacePayload,
   UpdateWorkspacePayload,
@@ -20,7 +23,9 @@ import type {
 } from '@/@types/index';
 
 // ---------------------------------- HTTP ----------------------------------
-export const http = axios.create({ baseURL: import.meta.env.VITE_API_URL });
+export const http = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || location.origin + '/api'
+});
 
 http.interceptors.request.use((requestConfig) => {
   const token: string | null = localStorage.getItem('token');
@@ -29,6 +34,30 @@ http.interceptors.request.use((requestConfig) => {
   }
   return requestConfig;
 });
+
+function touchApiReachability(ok: boolean): void {
+  const pinia = getActivePinia();
+  if (!pinia) return;
+  const health = useApiHealthStore(pinia);
+  if (ok) {
+    health.markReachable();
+  } else {
+    health.markUnreachable();
+  }
+}
+
+http.interceptors.response.use(
+  (response) => {
+    touchApiReachability(true);
+    return response;
+  },
+  (error: unknown) => {
+    if (isAxiosError(error) && error.response === undefined) {
+      touchApiReachability(false);
+    }
+    return Promise.reject(error);
+  }
+);
 
 // ---------------------------------- Auth ----------------------------------
 export const authApi = {
@@ -118,9 +147,6 @@ export const settingsApi = {
     typeof http.get<{ models: CursorModelOption[]; fromCache: boolean }>
   > => http.get<{ models: CursorModelOption[]; fromCache: boolean }>('/settings/cursor-models'),
 
-  getMcpStatus: (): ReturnType<typeof http.get<{ enabled: boolean; port: number | null }>> =>
-    http.get<{ enabled: boolean; port: number | null }>('/settings/mcp-status'),
-
   getAgentCapabilities: (): ReturnType<
     typeof http.get<{ cursorAvailable: boolean; claudeAvailable: boolean }>
   > =>
@@ -148,9 +174,8 @@ export const settingsApi = {
 
 // ---------------------------------- Push notifications ----------------------------------
 export const pushApi = {
-  getPublicKey: (): ReturnType<
-    typeof http.get<{ enabled: boolean; publicKey: string | null }>
-  > => http.get<{ enabled: boolean; publicKey: string | null }>('/push/public-key'),
+  getPublicKey: (): ReturnType<typeof http.get<{ enabled: boolean; publicKey: string | null }>> =>
+    http.get<{ enabled: boolean; publicKey: string | null }>('/push/public-key'),
 
   subscribe: (subscription: {
     endpoint: string;
@@ -160,29 +185,6 @@ export const pushApi = {
 
   unsubscribe: (endpoint: string): ReturnType<typeof http.post<{ ok: boolean }>> =>
     http.post<{ ok: boolean }>('/push/unsubscribe', { endpoint })
-};
-
-// ---------------------------------- API tokens ----------------------------------
-export const apiTokensApi = {
-  list: (): ReturnType<typeof http.get<ApiToken[]>> => http.get<ApiToken[]>('/settings/api-tokens'),
-
-  create: (
-    name: string
-  ): ReturnType<
-    typeof http.post<{
-      id: string;
-      name: string;
-      tokenPrefix: string;
-      token: string;
-      createdAt: string;
-    }>
-  > =>
-    http.post<{ id: string; name: string; tokenPrefix: string; token: string; createdAt: string }>(
-      '/settings/api-tokens',
-      { name }
-    ),
-
-  revoke: (id: string): ReturnType<typeof http.delete> => http.delete(`/settings/api-tokens/${id}`)
 };
 
 // ---------------------------------- Agent Auth (Cursor & Claude) ----------------------------------
@@ -218,7 +220,9 @@ export interface GitRepoStatus {
 export const gitApi = {
   status: (
     workspaceId: string
-  ): ReturnType<typeof http.get<{ files: GitFile[]; aheadCount: number; repos: GitRepoStatus[] }>> =>
+  ): ReturnType<
+    typeof http.get<{ files: GitFile[]; aheadCount: number; repos: GitRepoStatus[] }>
+  > =>
     http.get<{ files: GitFile[]; aheadCount: number; repos: GitRepoStatus[] }>(
       `/git/workspace/${workspaceId}/status`
     ),
@@ -283,7 +287,9 @@ export const filesApi = {
 // ---------------------------------- WebSocket ----------------------------------
 // API WebSocket routes live at /api/ws/...; ensure base includes /api so WS connects to the right path.
 function wsBase(): string {
-  const base = (import.meta.env.VITE_API_URL ?? '').replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const base = (import.meta.env.VITE_API_URL ?? location.origin + '/api')
+    .replace(/^https?:\/\//, '')
+    .replace(/\/$/, '');
   const pathPrefix = base.endsWith('/api') ? '' : '/api';
   return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${base}${pathPrefix}`;
 }
@@ -374,7 +380,7 @@ export const sessionsApi = {
     }),
 
   imageUrl: (sessionId: string, filename: string): string => {
-    const base = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
+    const base = (import.meta.env.VITE_API_URL ?? location.origin + '/api').replace(/\/$/, '');
     const token = localStorage.getItem('token') ?? '';
     return `${base}/sessions/${sessionId}/images/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}`;
   }
@@ -429,7 +435,7 @@ export const orchestratorApi = {
     body: { userMessage: string },
     opts: { onThinking: (text: string) => void }
   ): Promise<Orchestrator | null> {
-    const baseURL = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
+    const baseURL = (import.meta.env.VITE_API_URL ?? location.origin + '/api').replace(/\/$/, '');
     const token = localStorage.getItem('token');
     const response = await fetch(
       `${baseURL}/workspaces/${workspaceId}/orchestrators/${orchestratorId}/decompose`,

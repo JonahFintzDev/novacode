@@ -1,12 +1,14 @@
 <script setup lang="ts">
 // node_modules
-import { computed, onMounted, onUnmounted } from 'vue';
+import { computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 // components
+import ApiOfflineBanner from '@/components/ApiOfflineBanner.vue';
 import AppLayout from '@/components/AppLayout.vue';
 
 // stores
+import { useApiHealthStore } from '@/stores/apiHealth';
 import { useAuthStore } from '@/stores/auth';
 
 // classes
@@ -33,7 +35,10 @@ function setupVisibilityCheck(): void {
 
 // -------------------------------------------------- Data --------------------------------------------------
 const auth = useAuthStore();
+const apiHealth = useApiHealthStore();
 const route = useRoute();
+
+let healthPollId: ReturnType<typeof setInterval> | null = null;
 
 const bShowNavBar = computed(() => !route.meta.public);
 
@@ -66,11 +71,37 @@ function applyActiveTheme(): void {
   }
 }
 
+function scheduleHealthPolling(): void {
+  if (healthPollId !== null) {
+    clearInterval(healthPollId);
+  }
+  const intervalMs = apiHealth.apiReachable ? 45000 : 8000;
+  healthPollId = window.setInterval(() => {
+    void apiHealth.ping();
+  }, intervalMs);
+}
+
+function onDocumentVisibilityChange(): void {
+  setupVisibilityCheck();
+  if (document.visibilityState === 'visible') {
+    void apiHealth.ping();
+  }
+}
+
+watch(
+  () => apiHealth.apiReachable,
+  () => {
+    scheduleHealthPolling();
+  }
+);
+
 // -------------------------------------------------- Lifecycle --------------------------------------------------
 onMounted(async (): Promise<void> => {
   applyActiveTheme();
 
-  document.addEventListener('visibilitychange', setupVisibilityCheck);
+  void apiHealth.ping();
+  scheduleHealthPolling();
+  document.addEventListener('visibilitychange', onDocumentVisibilityChange);
   if (auth.token && !auth.validated) {
     await auth.validate();
   }
@@ -87,14 +118,19 @@ onMounted(async (): Promise<void> => {
 });
 
 onUnmounted((): void => {
-  document.removeEventListener('visibilitychange', setupVisibilityCheck);
+  document.removeEventListener('visibilitychange', onDocumentVisibilityChange);
+  if (healthPollId !== null) {
+    clearInterval(healthPollId);
+    healthPollId = null;
+  }
   stopAutoThemeWatcher();
 });
 </script>
 
 <template>
   <div class="flex flex-col app-shell">
-    <AppLayout v-if="bShowNavBar" />
+    <ApiOfflineBanner />
+    <AppLayout v-if="bShowNavBar" class="min-h-0 flex-1" />
     <template v-else>
       <RouterView class="flex min-h-0 flex-1 flex-col" />
     </template>

@@ -8,7 +8,7 @@ import PageShell from '@/components/layout/PageShell.vue';
 import PageHeader from '@/components/layout/PageHeader.vue';
 
 // classes
-import { agentAuthApi, settingsApi, apiTokensApi } from '@/classes/api';
+import { agentAuthApi, settingsApi } from '@/classes/api';
 
 // lib
 import {
@@ -31,10 +31,10 @@ import {
 } from '@/lib/notifications';
 
 // types
-import type { ApiToken, McpClientServer } from '@/@types/index';
+import type { McpClientServer } from '@/@types/index';
 
 // -------------------------------------------------- Data --------------------------------------------------
-const activeTab = ref<'general' | 'git' | 'integrations' | 'api'>('general');
+const activeTab = ref<'general' | 'git' | 'integrations' | 'mcp'>('general');
 const bCursorAuthenticated = ref<boolean>(false);
 const bClaudeAuthenticated = ref<boolean>(false);
 const bStartingCursorLogin = ref<boolean>(false);
@@ -65,22 +65,6 @@ const bSavingTheme = ref<boolean>(false);
 const bNotifications = ref<boolean>(isNotificationsEnabled());
 const notifPermission = ref<NotificationPermission | 'unsupported'>(getPermissionState());
 
-// API tokens
-const apiTokens = ref<ApiToken[]>([]);
-const bLoadingTokens = ref<boolean>(false);
-const bCreatingToken = ref<boolean>(false);
-const bRevokingId = ref<string | null>(null);
-const bShowNewTokenModal = ref<boolean>(false);
-const newTokenName = ref<string>('');
-const newTokenValue = ref<string | null>(null);
-const newTokenCreated = ref<ApiToken | null>(null);
-const bTokenCopied = ref<boolean>(false);
-
-// MCP status
-const mcpEnabled = ref<boolean>(false);
-const mcpPort = ref<number | null>(null);
-const bLoadingMcpStatus = ref<boolean>(false);
-
 // Mistral Vibe API key
 const bVibeConfigured = ref<boolean>(false);
 const bLoadingVibeStatus = ref<boolean>(false);
@@ -90,7 +74,7 @@ const bSavingVibeApiKey = ref<boolean>(false);
 const vibeApiKeyError = ref<string>('');
 const bDeletingVibeApiKey = ref<boolean>(false);
 
-// MCP client servers
+// MCP client servers (external MCP — written to Cursor / Claude config on the server)
 const mcpClients = ref<Record<string, McpClientServer>>({});
 const bLoadingMcpClients = ref<boolean>(false);
 const bSavingMcpClients = ref<boolean>(false);
@@ -398,109 +382,6 @@ const onAuthSessionEnded = (): void => {
   refreshAuthStatus();
 };
 
-// API tokens
-const loadApiTokens = async (): Promise<void> => {
-  bLoadingTokens.value = true;
-  try {
-    const response = await apiTokensApi.list();
-    apiTokens.value = response.data ?? [];
-  } catch {
-    apiTokens.value = [];
-  } finally {
-    bLoadingTokens.value = false;
-  }
-};
-
-const openNewTokenModal = (): void => {
-  newTokenName.value = '';
-  newTokenValue.value = null;
-  newTokenCreated.value = null;
-  bTokenCopied.value = false;
-  bShowNewTokenModal.value = true;
-};
-
-const closeNewTokenModal = (): void => {
-  bShowNewTokenModal.value = false;
-  newTokenValue.value = null;
-  newTokenCreated.value = null;
-  loadApiTokens();
-};
-
-const createApiToken = async (): Promise<void> => {
-  const name = newTokenName.value.trim();
-  if (!name || bCreatingToken.value) {
-    return;
-  }
-  bCreatingToken.value = true;
-  try {
-    const response = await apiTokensApi.create(name);
-    newTokenCreated.value = {
-      id: response.data.id,
-      name: response.data.name,
-      tokenPrefix: response.data.tokenPrefix,
-      createdAt: response.data.createdAt,
-      lastUsedAt: null
-    };
-    newTokenValue.value = response.data.token;
-  } catch {
-    // ignore
-  } finally {
-    bCreatingToken.value = false;
-  }
-};
-
-const copyTokenToClipboard = async (): Promise<void> => {
-  if (!newTokenValue.value) {
-    return;
-  }
-  try {
-    await navigator.clipboard.writeText(newTokenValue.value);
-    bTokenCopied.value = true;
-    setTimeout(() => {
-      bTokenCopied.value = false;
-    }, 2000);
-  } catch {
-    // ignore
-  }
-};
-
-const revokeToken = async (id: string): Promise<void> => {
-  if (bRevokingId.value) {
-    return;
-  }
-  bRevokingId.value = id;
-  try {
-    await apiTokensApi.revoke(id);
-    await loadApiTokens();
-  } catch {
-    // ignore
-  } finally {
-    bRevokingId.value = null;
-  }
-};
-
-const formatDate = (iso: string): string => {
-  try {
-    return new Date(iso).toLocaleString();
-  } catch {
-    return iso;
-  }
-};
-
-const loadMcpStatus = async (): Promise<void> => {
-  bLoadingMcpStatus.value = true;
-  try {
-    const response = await settingsApi.getMcpStatus();
-    mcpEnabled.value = response.data.enabled;
-    mcpPort.value = response.data.port;
-  } catch {
-    mcpEnabled.value = false;
-    mcpPort.value = null;
-  } finally {
-    bLoadingMcpStatus.value = false;
-  }
-};
-
 const loadVibeApiKeyStatus = async (): Promise<void> => {
   bLoadingVibeStatus.value = true;
   try {
@@ -557,7 +438,6 @@ const deleteVibeApiKey = async (): Promise<void> => {
   }
 };
 
-// MCP client servers
 const loadMcpClients = async (): Promise<void> => {
   bLoadingMcpClients.value = true;
   try {
@@ -590,9 +470,13 @@ const openEditMcpClient = (name: string): void => {
     type: isUrl ? 'url' : 'command',
     command: server.command ?? '',
     args: (server.args ?? []).join('\n'),
-    env: Object.entries(server.env ?? {}).map(([k, v]) => `${k}=${v}`).join('\n'),
+    env: Object.entries(server.env ?? {})
+      .map(([k, v]) => `${k}=${v}`)
+      .join('\n'),
     url: server.url ?? '',
-    headers: Object.entries(server.headers ?? {}).map(([k, v]) => `${k}: ${v}`).join('\n')
+    headers: Object.entries(server.headers ?? {})
+      .map(([k, v]) => `${k}: ${v}`)
+      .join('\n')
   };
   mcpClientFormError.value = '';
   bShowMcpClientModal.value = true;
@@ -617,7 +501,10 @@ const saveMcpClient = async (): Promise<void> => {
       return;
     }
     server.command = form.command.trim();
-    const args = form.args.split('\n').map((a) => a.trim()).filter(Boolean);
+    const args = form.args
+      .split('\n')
+      .map((a) => a.trim())
+      .filter(Boolean);
     if (args.length > 0) server.args = args;
     const env: Record<string, string> = {};
     for (const line of form.env.split('\n')) {
@@ -683,8 +570,6 @@ const deleteMcpClient = async (name: string): Promise<void> => {
 onMounted((): void => {
   refreshAuthStatus();
   loadSettings();
-  loadApiTokens();
-  loadMcpStatus();
   loadVibeApiKeyStatus();
   loadMcpClients();
 });
@@ -747,16 +632,16 @@ onMounted((): void => {
         <button
           type="button"
           role="tab"
-          :aria-selected="activeTab === 'api'"
+          :aria-selected="activeTab === 'mcp'"
           class="settings-tab px-4 py-2.5 text-sm font-medium rounded-lg transition-colors whitespace-nowrap"
           :class="
-            activeTab === 'api'
+            activeTab === 'mcp'
               ? 'bg-fg/[0.08] text-text-primary'
               : 'text-text-muted hover:text-text-primary hover:bg-fg/[0.04]'
           "
-          @click="activeTab = 'api'"
+          @click="activeTab = 'mcp'"
         >
-          API &amp; MCP
+          MCP
         </button>
       </div>
 
@@ -1232,83 +1117,23 @@ onMounted((): void => {
         </div>
       </div>
 
-      <!-- Tab panel: API & MCP -->
-      <div v-show="activeTab === 'api'" role="tabpanel" class="space-y-8">
-        <!-- MCP (Model Context Protocol) -->
-        <div>
-          <h2 class="text-sm font-semibold text-text-muted uppercase tracking-widest mb-5">
-            MCP server
-          </h2>
-          <p class="text-sm text-text-muted -mt-3 mb-5">
-            Model Context Protocol server for agents and orchestrators. When enabled, connect with
-            an API token (see below).
-          </p>
-          <div class="bg-fg/[0.02] border border-fg/[0.07] rounded-xl p-5">
-            <div v-if="bLoadingMcpStatus" class="text-sm text-text-muted py-2">Loading…</div>
-            <div v-else class="flex items-start justify-between gap-4">
-              <div class="min-w-0">
-                <p class="text-sm font-medium text-text-primary">Status</p>
-                <p class="text-xs text-text-muted mt-1">
-                  <template v-if="mcpEnabled">
-                    Listening on
-                    <code
-                      class="bg-fg/[0.06] border border-fg/[0.08] px-1.5 py-0.5 rounded font-mono text-[11px]"
-                      >http://127.0.0.1:{{ mcpPort }}</code
-                    >. Use
-                    <code
-                      class="bg-fg/[0.06] border border-fg/[0.08] px-1.5 py-0.5 rounded font-mono text-[11px]"
-                      >Authorization: Bearer &lt;token&gt;</code
-                    >
-                    or
-                    <code
-                      class="bg-fg/[0.06] border border-fg/[0.08] px-1.5 py-0.5 rounded font-mono text-[11px]"
-                      >?token=&lt;token&gt;</code
-                    >.
-                  </template>
-                  <template v-else>
-                    Disabled. Set
-                    <code
-                      class="bg-fg/[0.06] border border-fg/[0.08] px-1.5 py-0.5 rounded font-mono text-[11px]"
-                      >MCP_PORT</code
-                    >
-                    (e.g. 3100) to enable.
-                  </template>
-                </p>
-              </div>
-              <span
-                class="inline-flex items-center text-xs px-2.5 py-1 rounded-full border flex-shrink-0 font-medium"
-                :class="
-                  mcpEnabled
-                    ? 'bg-success/10 text-success border-success/20'
-                    : 'bg-fg/[0.08] text-text-muted border-fg/[0.1]'
-                "
-              >
-                <span
-                  class="w-1.5 h-1.5 rounded-full mr-1.5"
-                  :class="mcpEnabled ? 'bg-success' : 'bg-text-muted'"
-                ></span>
-                {{ mcpEnabled ? 'Enabled' : 'Disabled' }}
-              </span>
-            </div>
-          </div>
-        </div>
-
+      <!-- Tab panel: MCP clients -->
+      <div v-show="activeTab === 'mcp'" role="tabpanel" class="space-y-8">
         <!-- MCP client servers -->
         <div>
           <h2 class="text-sm font-semibold text-text-muted uppercase tracking-widest mb-5">
-            MCP Client Servers
+            MCP client servers
           </h2>
           <p class="text-sm text-text-muted -mt-3 mb-5">
-            Add MCP servers once; they apply to
-            <strong class="text-text-primary font-medium">every workspace</strong>. The API writes
-            your agent config volume (<code
+            Register <strong class="text-text-primary font-medium">external</strong> MCP servers (stdio or HTTP) for
+            Cursor and Claude Code. The API writes your config volume (<code
               class="bg-fg/[0.06] border border-fg/[0.08] px-1.5 py-0.5 rounded text-text-primary font-mono text-[11px]"
               >CONFIG_DIR</code
             >): Cursor reads
             <code
               class="bg-fg/[0.06] border border-fg/[0.08] px-1.5 py-0.5 rounded text-text-primary font-mono text-[11px]"
               >.cursor/mcp.json</code>
-            and Claude Code merges
+            ; Claude merges
             <code
               class="bg-fg/[0.06] border border-fg/[0.08] px-1.5 py-0.5 rounded text-text-primary font-mono text-[11px]"
               >mcpServers</code>
@@ -1316,7 +1141,7 @@ onMounted((): void => {
             <code
               class="bg-fg/[0.06] border border-fg/[0.08] px-1.5 py-0.5 rounded text-text-primary font-mono text-[11px]"
               >.claude.json</code>
-            (user scope, all projects).
+            (applies to all workspaces using this server).
           </p>
 
           <div class="bg-fg/[0.02] border border-fg/[0.07] rounded-xl p-5">
@@ -1356,7 +1181,9 @@ onMounted((): void => {
                     >
                       {{
                         server.url && !server.command
-                          ? (server.type === 'sse' ? 'SSE' : 'HTTP')
+                          ? server.type === 'sse'
+                            ? 'SSE'
+                            : 'HTTP'
                           : 'stdio'
                       }}
                     </span>
@@ -1388,130 +1215,148 @@ onMounted((): void => {
             </ul>
           </div>
         </div>
-
-        <!-- API tokens -->
-        <div>
-          <h2 class="text-sm font-semibold text-text-muted uppercase tracking-widest mb-5">
-            API tokens
-          </h2>
-          <p class="text-sm text-text-muted -mt-3 mb-5">
-            Create tokens to authenticate with the API (e.g. scripts, MCP, CLI). Use
-            <code
-              class="bg-fg/[0.06] border border-fg/[0.08] px-1.5 py-0.5 rounded text-text-primary font-mono text-[11px]"
-              >Authorization: Bearer &lt;token&gt;</code
-            >.
-          </p>
-          <div class="bg-fg/[0.02] border border-fg/[0.07] rounded-xl p-5">
-            <div class="flex items-center justify-between gap-4 mb-4">
-              <span class="text-sm text-text-primary">Your tokens</span>
-              <button
-                class="flex items-center gap-2 bg-primary hover:bg-primary-hover disabled:opacity-50 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-all"
-                :disabled="bCreatingToken"
-                @click="openNewTokenModal"
-              >
-                Generate new token
-              </button>
-            </div>
-            <div v-if="bLoadingTokens" class="text-sm text-text-muted py-4">Loading…</div>
-            <div v-else-if="apiTokens.length === 0" class="text-sm text-text-muted py-4">
-              No tokens yet. Generate one to get started.
-            </div>
-            <ul v-else class="space-y-3">
-              <li
-                v-for="t in apiTokens"
-                :key="t.id"
-                class="flex items-center justify-between gap-4 py-3 border-b border-fg/[0.06] last:border-0"
-              >
-                <div class="min-w-0">
-                  <p class="text-sm font-medium text-text-primary truncate">{{ t.name }}</p>
-                  <p class="text-xs text-text-muted font-mono mt-0.5">{{ t.tokenPrefix }}…</p>
-                  <p class="text-xs text-text-muted mt-1">
-                    Created {{ formatDate(t.createdAt) }}
-                    <span v-if="t.lastUsedAt"> · Last used {{ formatDate(t.lastUsedAt) }}</span>
-                  </p>
-                </div>
-                <button
-                  class="flex-shrink-0 text-xs text-destructive hover:bg-destructive/10 px-3 py-1.5 rounded-lg transition-colors"
-                  :disabled="bRevokingId === t.id"
-                  @click="revokeToken(t.id)"
-                >
-                  {{ bRevokingId === t.id ? 'Revoking…' : 'Revoke' }}
-                </button>
-              </li>
-            </ul>
-          </div>
-        </div>
       </div>
   </PageShell>
 
-    <!-- New API token modal -->
+    <!-- MCP client server modal -->
     <Teleport to="body">
       <Transition name="modal-fade">
         <div
-          v-if="bShowNewTokenModal"
+          v-if="bShowMcpClientModal"
           class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
-          @click.self="closeNewTokenModal"
+          @click.self="bShowMcpClientModal = false"
         >
           <div
-            class="modal-panel w-full max-w-md flex flex-col bg-fg/[0.04] border border-fg/[0.12] rounded-xl shadow-2xl"
+            class="modal-panel w-full max-w-md flex flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-2xl"
             @click.stop
           >
             <div
-              class="flex flex-shrink-0 items-center justify-between px-4 py-3 border-b border-fg/[0.08]"
+              class="flex flex-shrink-0 items-center justify-between border-b border-border px-4 py-3"
             >
               <p class="text-sm font-medium text-text-primary">
-                {{ newTokenValue ? 'Token created' : 'New API token' }}
+                {{ mcpClientEditName ? 'Edit MCP server' : 'Add MCP server' }}
               </p>
               <button
                 class="text-sm px-3 py-2 text-text-muted hover:text-text-primary hover:bg-fg/[0.08] rounded-lg transition-all"
-                @click="closeNewTokenModal"
+                @click="bShowMcpClientModal = false"
               >
-                {{ newTokenValue ? 'Done' : 'Cancel' }}
+                Cancel
               </button>
             </div>
-            <div class="flex-1 min-h-0 p-4 space-y-4">
-              <template v-if="!newTokenValue">
-                <p class="text-sm text-text-muted">
-                  Give this token a name so you can recognize it later (e.g. "CLI" or "MCP server").
-                </p>
+            <div class="max-h-[70vh] min-h-0 flex-1 space-y-4 overflow-y-auto bg-surface p-4">
+              <div>
+                <label class="block text-sm font-medium text-text-primary mb-1.5">Server name</label>
+                <input
+                  v-model="mcpClientForm.name"
+                  type="text"
+                  placeholder="e.g. filesystem"
+                  class="w-full bg-fg/[0.05] border border-fg/[0.1] rounded-lg px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all"
+                  :disabled="bSavingMcpClients"
+                />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-text-primary mb-1.5">Type</label>
+                <div class="flex gap-1 p-0.5 rounded-lg bg-fg/[0.04] border border-fg/[0.07]">
+                  <button
+                    type="button"
+                    class="flex-1 text-sm font-medium py-2 rounded-md transition-colors"
+                    :class="
+                      mcpClientForm.type === 'command'
+                        ? 'bg-fg/[0.08] text-text-primary'
+                        : 'text-text-muted hover:text-text-primary'
+                    "
+                    @click="mcpClientForm.type = 'command'"
+                  >
+                    Command (stdio)
+                  </button>
+                  <button
+                    type="button"
+                    class="flex-1 text-sm font-medium py-2 rounded-md transition-colors"
+                    :class="
+                      mcpClientForm.type === 'url'
+                        ? 'bg-fg/[0.08] text-text-primary'
+                        : 'text-text-muted hover:text-text-primary'
+                    "
+                    @click="mcpClientForm.type = 'url'"
+                  >
+                    URL (HTTP)
+                  </button>
+                </div>
+              </div>
+              <template v-if="mcpClientForm.type === 'command'">
                 <div>
-                  <label class="block text-sm font-medium text-text-primary mb-1.5">Name</label>
+                  <label class="block text-sm font-medium text-text-primary mb-1.5">Command</label>
                   <input
-                    v-model="newTokenName"
+                    v-model="mcpClientForm.command"
                     type="text"
-                    placeholder="e.g. CLI"
-                    class="w-full bg-fg/[0.05] border border-fg/[0.1] rounded-lg px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all"
-                    :disabled="bCreatingToken"
-                    @keydown.enter="createApiToken"
+                    placeholder="npx"
+                    class="w-full bg-fg/[0.05] border border-fg/[0.1] rounded-lg px-3 py-2.5 text-sm text-text-primary font-mono placeholder:text-text-muted outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all"
+                    :disabled="bSavingMcpClients"
                   />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-text-primary mb-1.5">
+                    Arguments
+                    <span class="text-text-muted font-normal">(one per line)</span>
+                  </label>
+                  <textarea
+                    v-model="mcpClientForm.args"
+                    rows="3"
+                    placeholder="-y&#10;@modelcontextprotocol/server-filesystem&#10;/path/to/dir"
+                    class="w-full bg-fg/[0.05] border border-fg/[0.1] rounded-lg px-3 py-2.5 text-sm text-text-primary font-mono placeholder:text-text-muted outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all resize-y"
+                    :disabled="bSavingMcpClients"
+                  ></textarea>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-text-primary mb-1.5">
+                    Environment variables
+                    <span class="text-text-muted font-normal">(KEY=VALUE, one per line)</span>
+                  </label>
+                  <textarea
+                    v-model="mcpClientForm.env"
+                    rows="2"
+                    placeholder="API_KEY=…"
+                    class="w-full bg-fg/[0.05] border border-fg/[0.1] rounded-lg px-3 py-2.5 text-sm text-text-primary font-mono placeholder:text-text-muted outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all resize-y"
+                    :disabled="bSavingMcpClients"
+                  ></textarea>
                 </div>
               </template>
               <template v-else>
-                <p class="text-xs text-warning">
-                  Copy the token now. You won’t be able to see it again.
-                </p>
-                <div class="flex items-center gap-2">
-                  <code
-                    class="flex-1 min-w-0 truncate bg-fg/[0.08] border border-fg/[0.1] rounded-lg px-3 py-2.5 text-sm font-mono text-text-primary"
-                    :title="newTokenValue"
-                    >{{ newTokenValue }}</code
-                  >
-                  <button
-                    class="flex-shrink-0 bg-primary hover:bg-primary-hover text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-all"
-                    @click="copyTokenToClipboard"
-                  >
-                    {{ bTokenCopied ? 'Copied' : 'Copy' }}
-                  </button>
+                <div>
+                  <label class="block text-sm font-medium text-text-primary mb-1.5">URL</label>
+                  <input
+                    v-model="mcpClientForm.url"
+                    type="url"
+                    placeholder="https://example.com/mcp"
+                    class="w-full bg-fg/[0.05] border border-fg/[0.1] rounded-lg px-3 py-2.5 text-sm text-text-primary font-mono placeholder:text-text-muted outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all"
+                    :disabled="bSavingMcpClients"
+                  />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-text-primary mb-1.5">
+                    Headers
+                    <span class="text-text-muted font-normal">(Key: Value, one per line)</span>
+                  </label>
+                  <textarea
+                    v-model="mcpClientForm.headers"
+                    rows="2"
+                    placeholder="Authorization: Bearer …"
+                    class="w-full bg-fg/[0.05] border border-fg/[0.1] rounded-lg px-3 py-2.5 text-sm text-text-primary font-mono placeholder:text-text-muted outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all resize-y"
+                    :disabled="bSavingMcpClients"
+                  ></textarea>
                 </div>
               </template>
+              <p v-if="mcpClientFormError" class="text-xs text-destructive">
+                {{ mcpClientFormError }}
+              </p>
             </div>
-            <div v-if="!newTokenValue" class="flex flex-shrink-0 gap-2 p-4 pt-0">
+            <div class="flex flex-shrink-0 gap-2 border-t border-border bg-surface p-4 pt-3">
               <button
                 class="flex-1 bg-primary hover:bg-primary-hover disabled:opacity-50 text-white text-sm font-medium py-2.5 rounded-lg transition-all"
-                :disabled="!newTokenName.trim() || bCreatingToken"
-                @click="createApiToken"
+                :disabled="!mcpClientForm.name.trim() || bSavingMcpClients"
+                @click="saveMcpClient"
               >
-                {{ bCreatingToken ? 'Creating…' : 'Create token' }}
+                {{ bSavingMcpClients ? 'Saving…' : 'Save' }}
               </button>
             </div>
           </div>
@@ -1577,156 +1422,6 @@ onMounted((): void => {
                 @click="deleteVibeApiKey"
               >
                 {{ bDeletingVibeApiKey ? 'Removing…' : 'Remove key' }}
-              </button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <!-- MCP client server modal -->
-    <Teleport to="body">
-      <Transition name="modal-fade">
-        <div
-          v-if="bShowMcpClientModal"
-          class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
-          @click.self="bShowMcpClientModal = false"
-        >
-          <div
-            class="modal-panel w-full max-w-md flex flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-2xl"
-            @click.stop
-          >
-            <div
-              class="flex flex-shrink-0 items-center justify-between border-b border-border px-4 py-3"
-            >
-              <p class="text-sm font-medium text-text-primary">
-                {{ mcpClientEditName ? 'Edit MCP Server' : 'Add MCP Server' }}
-              </p>
-              <button
-                class="text-sm px-3 py-2 text-text-muted hover:text-text-primary hover:bg-fg/[0.08] rounded-lg transition-all"
-                @click="bShowMcpClientModal = false"
-              >
-                Cancel
-              </button>
-            </div>
-            <div class="max-h-[70vh] min-h-0 flex-1 space-y-4 overflow-y-auto bg-surface p-4">
-              <!-- Name -->
-              <div>
-                <label class="block text-sm font-medium text-text-primary mb-1.5">Server name</label>
-                <input
-                  v-model="mcpClientForm.name"
-                  type="text"
-                  placeholder="e.g. filesystem"
-                  class="w-full bg-fg/[0.05] border border-fg/[0.1] rounded-lg px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all"
-                  :disabled="bSavingMcpClients"
-                />
-              </div>
-              <!-- Type toggle -->
-              <div>
-                <label class="block text-sm font-medium text-text-primary mb-1.5">Type</label>
-                <div class="flex gap-1 p-0.5 rounded-lg bg-fg/[0.04] border border-fg/[0.07]">
-                  <button
-                    type="button"
-                    class="flex-1 text-sm font-medium py-2 rounded-md transition-colors"
-                    :class="
-                      mcpClientForm.type === 'command'
-                        ? 'bg-fg/[0.08] text-text-primary'
-                        : 'text-text-muted hover:text-text-primary'
-                    "
-                    @click="mcpClientForm.type = 'command'"
-                  >
-                    Command (stdio)
-                  </button>
-                  <button
-                    type="button"
-                    class="flex-1 text-sm font-medium py-2 rounded-md transition-colors"
-                    :class="
-                      mcpClientForm.type === 'url'
-                        ? 'bg-fg/[0.08] text-text-primary'
-                        : 'text-text-muted hover:text-text-primary'
-                    "
-                    @click="mcpClientForm.type = 'url'"
-                  >
-                    URL (HTTP)
-                  </button>
-                </div>
-              </div>
-              <!-- Command fields -->
-              <template v-if="mcpClientForm.type === 'command'">
-                <div>
-                  <label class="block text-sm font-medium text-text-primary mb-1.5">Command</label>
-                  <input
-                    v-model="mcpClientForm.command"
-                    type="text"
-                    placeholder="npx"
-                    class="w-full bg-fg/[0.05] border border-fg/[0.1] rounded-lg px-3 py-2.5 text-sm text-text-primary font-mono placeholder:text-text-muted outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all"
-                    :disabled="bSavingMcpClients"
-                  />
-                </div>
-                <div>
-                  <label class="block text-sm font-medium text-text-primary mb-1.5">
-                    Arguments
-                    <span class="text-text-muted font-normal">(one per line)</span>
-                  </label>
-                  <textarea
-                    v-model="mcpClientForm.args"
-                    rows="3"
-                    placeholder="-y&#10;@modelcontextprotocol/server-filesystem&#10;/path/to/dir"
-                    class="w-full bg-fg/[0.05] border border-fg/[0.1] rounded-lg px-3 py-2.5 text-sm text-text-primary font-mono placeholder:text-text-muted outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all resize-y"
-                    :disabled="bSavingMcpClients"
-                  ></textarea>
-                </div>
-                <div>
-                  <label class="block text-sm font-medium text-text-primary mb-1.5">
-                    Environment variables
-                    <span class="text-text-muted font-normal">(KEY=VALUE, one per line)</span>
-                  </label>
-                  <textarea
-                    v-model="mcpClientForm.env"
-                    rows="2"
-                    placeholder="API_KEY=sk-..."
-                    class="w-full bg-fg/[0.05] border border-fg/[0.1] rounded-lg px-3 py-2.5 text-sm text-text-primary font-mono placeholder:text-text-muted outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all resize-y"
-                    :disabled="bSavingMcpClients"
-                  ></textarea>
-                </div>
-              </template>
-              <!-- URL fields -->
-              <template v-else>
-                <div>
-                  <label class="block text-sm font-medium text-text-primary mb-1.5">URL</label>
-                  <input
-                    v-model="mcpClientForm.url"
-                    type="url"
-                    placeholder="http://localhost:3100/mcp"
-                    class="w-full bg-fg/[0.05] border border-fg/[0.1] rounded-lg px-3 py-2.5 text-sm text-text-primary font-mono placeholder:text-text-muted outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all"
-                    :disabled="bSavingMcpClients"
-                  />
-                </div>
-                <div>
-                  <label class="block text-sm font-medium text-text-primary mb-1.5">
-                    Headers
-                    <span class="text-text-muted font-normal">(Key: Value, one per line)</span>
-                  </label>
-                  <textarea
-                    v-model="mcpClientForm.headers"
-                    rows="2"
-                    placeholder="Authorization: Bearer sk-..."
-                    class="w-full bg-fg/[0.05] border border-fg/[0.1] rounded-lg px-3 py-2.5 text-sm text-text-primary font-mono placeholder:text-text-muted outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all resize-y"
-                    :disabled="bSavingMcpClients"
-                  ></textarea>
-                </div>
-              </template>
-              <p v-if="mcpClientFormError" class="text-xs text-destructive">
-                {{ mcpClientFormError }}
-              </p>
-            </div>
-            <div class="flex flex-shrink-0 gap-2 border-t border-border bg-surface p-4 pt-3">
-              <button
-                class="flex-1 bg-primary hover:bg-primary-hover disabled:opacity-50 text-white text-sm font-medium py-2.5 rounded-lg transition-all"
-                :disabled="!mcpClientForm.name.trim() || bSavingMcpClients"
-                @click="saveMcpClient"
-              >
-                {{ bSavingMcpClients ? 'Saving…' : 'Save' }}
               </button>
             </div>
           </div>

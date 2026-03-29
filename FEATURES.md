@@ -491,14 +491,7 @@
   - Workspaces can be `shared` (all users) or `private` (owner only) via a `visibility` column.
   - `POST /api/auth/register` endpoint (admin-only or with invite token).
 
-### 8.5 MCP (Model Context Protocol) Server Integration
-**What:** Allow sessions to connect to a local MCP server and expose its tools to the agent.
-**Detail:**
-- Workspace setting: `MCP Server URL` (optional, e.g. `http://localhost:3001`).
-- When set, prepend `--mcp-server <url>` (or equivalent flag) to Claude Code's spawn args.
-- UI: show connected MCP server badge in SessionView header.
-
-### 8.6 Remote Workspace Support (SSH)
+### 8.5 Remote Workspace Support (SSH)
 **What:** Allow workspaces to point to remote directories over SSH rather than local mounts.
 **Detail:**
 - Workspace type: `local` (current) or `ssh`.

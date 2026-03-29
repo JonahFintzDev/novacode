@@ -92,7 +92,6 @@ services:
     image: ${NOVACODE_IMAGE:-novacode/novacode:latest}
     ports:
       - "${PORT:-3030}:3030"
-      - "${MCP_PORT:-3100}:3100"
     env_file:
       - .env
     restart: unless-stopped
@@ -103,7 +102,6 @@ services:
       GID: ${GID}
       JWT_SECRET: ${JWT_SECRET}
       PORT: ${PORT}
-      MCP_PORT: ${MCP_PORT}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
@@ -235,7 +233,6 @@ POSTGRES_PUBLISH_PORT=5432
 JWT_SECRET=${jwt}
 
 PORT=3030
-MCP_PORT=3100
 
 UID=$(id -u)
 GID=$(id -g)

@@ -4,7 +4,7 @@ import { Type } from '@sinclair/typebox';
 import { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 
 // classes
-import { jwtPreHandler, generateApiToken, hashApiToken, tokenDisplayPrefix } from '../classes/auth';
+import { jwtPreHandler } from '../classes/auth';
 import { db } from '../classes/database';
 import {
   clearVibeApiKey,
@@ -201,30 +201,6 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
     }
   );
 
-  // ── MCP status ─────────────────────────────────────────────────────────────
-
-  fastifyInstance.get(
-    '/api/settings/mcp-status',
-    {
-      preHandler: jwtPreHandler,
-      schema: {
-        response: {
-          200: Type.Object({
-            enabled: Type.Boolean(),
-            port: Type.Union([Type.Number(), Type.Null()])
-          })
-        }
-      }
-    },
-    async () => {
-      const enabled = config.mcpPort > 0;
-      return {
-        enabled,
-        port: enabled ? config.mcpPort : null
-      };
-    }
-  );
-
   // ── Agent capabilities (Cursor / Claude) ─────────────────────────────────────
 
   fastifyInstance.get(
@@ -294,93 +270,6 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
       const { servers } = request.body as { servers: Record<string, McpClientServerConfig> };
       writeMcpClients(config.configDir, servers);
       return { servers };
-    }
-  );
-
-  // ── API tokens ─────────────────────────────────────────────────────────────
-
-  const ApiTokenSchema = Type.Object({
-    id: Type.String(),
-    name: Type.String(),
-    tokenPrefix: Type.String(),
-    createdAt: Type.String(),
-    lastUsedAt: Type.Union([Type.String(), Type.Null()])
-  });
-
-  fastifyInstance.get(
-    '/api/settings/api-tokens',
-    {
-      preHandler: jwtPreHandler,
-      schema: { response: { 200: Type.Array(ApiTokenSchema) } }
-    },
-    async (request) => {
-      const tokens = await db.listApiTokensByUserId(request.jwtUser!.id);
-      return tokens.map((t) => ({
-        id: t.id,
-        name: t.name,
-        tokenPrefix: t.tokenPrefix,
-        createdAt: t.createdAt,
-        lastUsedAt: t.lastUsedAt
-      }));
-    }
-  );
-
-  fastifyInstance.post(
-    '/api/settings/api-tokens',
-    {
-      preHandler: jwtPreHandler,
-      schema: {
-        body: Type.Object({ name: Type.String({ minLength: 1, maxLength: 255 }) }),
-        response: {
-          201: Type.Object({
-            id: Type.String(),
-            name: Type.String(),
-            tokenPrefix: Type.String(),
-            token: Type.String(),
-            createdAt: Type.String()
-          })
-        }
-      }
-    },
-    async (request, reply) => {
-      const name = (request.body as { name: string }).name.trim();
-      const rawToken = generateApiToken();
-      const tokenHash = hashApiToken(rawToken);
-      const tokenPrefix = tokenDisplayPrefix(rawToken);
-
-      const created = await db.createApiToken({
-        userId: request.jwtUser!.id,
-        name,
-        tokenHash,
-        tokenPrefix
-      });
-
-      return reply.code(201).send({
-        id: created.id,
-        name: created.name,
-        tokenPrefix: created.tokenPrefix,
-        token: rawToken,
-        createdAt: created.createdAt
-      });
-    }
-  );
-
-  fastifyInstance.delete(
-    '/api/settings/api-tokens/:id',
-    {
-      preHandler: jwtPreHandler,
-      schema: {
-        params: Type.Object({ id: Type.String() }),
-        response: { 204: Type.Null(), 404: Type.Object({ error: Type.String() }) }
-      }
-    },
-    async (request, reply) => {
-      const { id } = request.params as { id: string };
-      const deleted = await db.deleteApiToken(id, request.jwtUser!.id);
-      if (!deleted) {
-        return reply.code(404).send({ error: 'Token not found' });
-      }
-      return reply.code(204).send(null);
     }
   );
 }

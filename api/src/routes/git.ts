@@ -57,7 +57,8 @@ async function isGitRepo(cwd: string): Promise<boolean> {
 async function discoverGitRepos(baseCwd: string): Promise<string[]> {
   const repos = new Set<string>();
   const skipDirs = new Set(['.git', 'node_modules', '.next', 'dist', 'build', '.cache']);
-  const maxDepth = 6;
+  /** Only the workspace root and immediate child directories are scanned for `.git` (no deeper nesting). */
+  const maxDepth = 1;
 
   if (await isGitRepo(baseCwd)) repos.add('');
 

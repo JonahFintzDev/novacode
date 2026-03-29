@@ -99,14 +99,6 @@ export interface McpClientServer {
   headers?: Record<string, string>;
 }
 
-export interface ApiToken {
-  id: string;
-  name: string;
-  tokenPrefix: string;
-  createdAt: string;
-  lastUsedAt: string | null;
-}
-
 export interface Automation {
   id: string;
   name: string;

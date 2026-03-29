@@ -24,7 +24,7 @@ export interface CreateSessionWithAgentResult {
   error?: string;
 }
 
-// shared by HTTP route (POST /api/workspaces/:id/sessions) and MCP create_session tool
+// shared by HTTP route (POST /api/workspaces/:id/sessions)
 export async function createSessionWithAgent(
   params: CreateSessionWithAgentParams
 ): Promise<CreateSessionWithAgentResult> {

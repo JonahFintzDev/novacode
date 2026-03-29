@@ -11,7 +11,6 @@ import { registerAuth } from './classes/auth';
 import { config, writeGlobalGitConfig } from './classes/config';
 import { db } from './classes/database';
 import { sessionManager } from './classes/sessionManager';
-import { startMcpServer } from './mcp/server';
 
 // routes
 import { authRoutes } from './routes/auth';
@@ -144,9 +143,6 @@ async function main(): Promise<void> {
   // start listening
   await fastify.listen({ port: config.port, host: '0.0.0.0' });
   fastify.log.info(`Server listening on port ${config.port}`);
-
-  // MCP server (optional)
-  startMcpServer();
 
   // automation scheduler
   startAutomationScheduler();

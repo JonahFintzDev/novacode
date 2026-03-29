@@ -1,6 +1,6 @@
 # NovaCode — Improvement Plan
 
-This document outlines a detailed plan for **new features**, **UI improvements**, **current problem areas**, and **general improvements** based on a review of the application (Fastify API + Vue 3 dashboard, workspaces, sessions, orchestrators, MCP, themes, etc.).
+This document outlines a detailed plan for **new features**, **UI improvements**, **current problem areas**, and **general improvements** based on a review of the application (Fastify API + Vue 3 dashboard, workspaces, sessions, orchestrators, themes, etc.).
 
 ---
 
@@ -52,9 +52,6 @@ This document outlines a detailed plan for **new features**, **UI improvements**
   - Outgoing webhooks on events (e.g. “orchestrator completed”, “session created”) for CI or external tools.
 - **Slack/Discord/Teams**
   - Optional bot to create sessions or run orchestrators from chat.
-- **MCP tool discovery UI**
-  - In Settings or a dedicated page, list MCP tools available to the agent and allow enabling/disabling or scoping by workspace.
-
 ### 1.6 Notifications and feedback
 
 - **In-app notification center**
@@ -223,7 +220,7 @@ This document outlines a detailed plan for **new features**, **UI improvements**
 - **Structured logging**
   - Replace ad-hoc `console.log` with a logger (e.g. Pino, which is already a dependency) and log request IDs for tracing.
 - **Health check**
-  - Extend `/api/health` to optionally check DB connectivity and (if applicable) MCP status so operators can monitor dependency health.
+  - Extend `/api/health` to optionally check DB connectivity so operators can monitor dependency health.
 
 ### 4.3 DevOps and configuration
 

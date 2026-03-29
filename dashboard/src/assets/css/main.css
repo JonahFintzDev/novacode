@@ -82,6 +82,12 @@ select {
   @apply transition-all;
 }
 
+/* Global text-field sizing must not apply to native toggles (breaks flex rows, e.g. modals). */
+input[type='checkbox'],
+input[type='radio'] {
+  @apply w-auto h-auto min-h-0 p-0 shrink-0;
+}
+
 .field {
   .label {
     @apply block relative text-sm font-medium text-text-primary mb-1.5 flex items-center gap-2 justify-between;
