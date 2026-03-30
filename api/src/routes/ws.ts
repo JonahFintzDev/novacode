@@ -86,7 +86,7 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
       return;
     }
     try {
-      verifyToken(token);
+      await verifyToken(token);
     } catch {
       socket.close(4001, 'Invalid token');
       return;
@@ -159,7 +159,7 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
         return;
       }
       try {
-        verifyToken(token);
+        await verifyToken(token);
       } catch {
         socket.close(4001, 'Invalid token');
         return;
@@ -199,7 +199,7 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
         return;
       }
       try {
-        verifyToken(token);
+        await verifyToken(token);
       } catch {
         socket.close(4001, 'Invalid token');
         return;

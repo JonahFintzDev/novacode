@@ -127,7 +127,7 @@ Copy `.env.example` to `.env` and edit the values below.
 | Variable | Description |
 |----------|-------------|
 | `POSTGRES_PASSWORD` | Password for the PostgreSQL user |
-| `JWT_SECRET` | Long random string for signing JWTs — `openssl rand -hex 32` |
+| `JWT_SECRET` | Long random string for signing JWTs — `openssl rand -hex 32` (keep stable across restarts/upgrades; changing it invalidates existing browser tokens) |
 
 ### PostgreSQL
 
