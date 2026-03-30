@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // node_modules
-import { ref, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 // components
@@ -11,6 +11,7 @@ import ConfirmModal from '@/components/ConfirmModal.vue';
 
 // classes
 import { orchestratorApi } from '@/classes/api';
+import { useWorkspacesStore } from '@/stores/workspaces';
 
 // types
 import type { Orchestrator } from '@/@types/index';
@@ -18,9 +19,14 @@ import type { Orchestrator } from '@/@types/index';
 const props = defineProps<{
   workspaceId: string;
   orchestratorId: string;
+  showSidebarToggle?: boolean;
 }>();
 
 const router = useRouter();
+const workspacesStore = useWorkspacesStore();
+const emit = defineEmits<{
+  (e: 'toggle-sidebar'): void;
+}>();
 
 const orchestrator = ref<Orchestrator | null>(null);
 const loading = ref(true);
@@ -28,6 +34,27 @@ const error = ref<string | null>(null);
 const showDeleteModal = ref(false);
 const isDeleting = ref(false);
 const activeTab = ref<'orchestrator' | 'files' | 'git'>('orchestrator');
+const mobileOrchestratorMenuOpen = ref(false);
+const mobileOrchestratorMenuRef = ref<HTMLElement | null>(null);
+const workspaceName = computed(
+  () => workspacesStore.workspaces.find((w) => w.id === props.workspaceId)?.name ?? 'Workspace'
+);
+
+function closeMobileOrchestratorMenu(): void {
+  mobileOrchestratorMenuOpen.value = false;
+}
+
+function handleDocumentClickMobileMenu(e: MouseEvent): void {
+  if (!mobileOrchestratorMenuOpen.value) return;
+  const el = mobileOrchestratorMenuRef.value;
+  if (el && !el.contains(e.target as Node)) {
+    closeMobileOrchestratorMenu();
+  }
+}
+
+function handleKeydownMobileMenu(e: KeyboardEvent): void {
+  if (e.key === 'Escape' && mobileOrchestratorMenuOpen.value) closeMobileOrchestratorMenu();
+}
 
 async function fetchOrchestrator() {
   loading.value = true;
@@ -43,10 +70,6 @@ async function fetchOrchestrator() {
   }
 }
 
-function goBack() {
-  router.push({ name: 'workspace', params: { id: props.workspaceId } });
-}
-
 async function deleteOrchestrator() {
   isDeleting.value = true;
   try {
@@ -59,12 +82,48 @@ async function deleteOrchestrator() {
   }
 }
 
+async function toggleArchive() {
+  if (!orchestrator.value) return;
+  try {
+    const { data: updated } = await orchestratorApi.update(props.workspaceId, props.orchestratorId, {
+      archived: !orchestrator.value.archived
+    });
+    orchestrator.value = updated;
+  } catch (e) {
+    console.error('Failed to toggle orchestrator archive:', e);
+  }
+}
+
+async function openEditOrchestratorName() {
+  if (!orchestrator.value) return;
+  const currentName = orchestrator.value.name ?? 'Orchestrator';
+  const nextName = window.prompt('Edit orchestrator name', currentName);
+  if (nextName == null) return;
+  const trimmedName = nextName.trim();
+  if (!trimmedName || trimmedName === currentName) return;
+  try {
+    const { data: updated } = await orchestratorApi.update(props.workspaceId, props.orchestratorId, {
+      name: trimmedName
+    });
+    orchestrator.value = updated;
+  } catch (e) {
+    console.error('Failed to rename orchestrator:', e);
+  }
+}
+
 function updateOrchestratorFromPanel(o: Orchestrator) {
   orchestrator.value = o;
 }
 
 onMounted(() => {
   fetchOrchestrator();
+  document.addEventListener('click', handleDocumentClickMobileMenu);
+  document.addEventListener('keydown', handleKeydownMobileMenu);
+});
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleDocumentClickMobileMenu);
+  document.removeEventListener('keydown', handleKeydownMobileMenu);
 });
 
 watch(
@@ -81,31 +140,115 @@ watch(
 <template>
   <div class="flex-1 flex flex-col overflow-hidden">
     <!-- Header -->
-    <div class="px-4 md:px-6 py-3 flex items-center border-b border-fg/10 shrink-0 gap-3 min-w-0">
-      <button
-        @click="goBack"
-        class="shrink-0 text-sm text-text-muted hover:text-text-primary transition-colors flex items-center gap-1"
-      >
-        <span
-          class="material-symbols-outlined select-none"
-          style="font-size: 14px; vertical-align: middle"
-          >arrow_back</span
-        >
-        Back
-      </button>
-      <div class="flex-1 min-w-0">
-        <h1 class="text-base font-semibold text-text-primary truncate">
-          {{ loading ? '…' : (orchestrator?.name ?? 'Orchestrator') }}
-        </h1>
+    <div class="h-16 px-4 md:px-6 flex items-center border-b border-fg/10 shrink-0 gap-3 min-w-0">
+      <div class="flex-1 min-w-0 flex flex-col gap-0.5">
+        <div class="flex items-center">
+          <button
+            v-if="props.showSidebarToggle"
+            @click="emit('toggle-sidebar')"
+            class="button is-transparent is-icon mr-2"
+            title="Toggle sessions"
+          >
+            <span
+              class="material-symbols-outlined select-none"
+              style="font-size: 18px; vertical-align: middle"
+              >menu_open</span
+            >
+          </button>
+          <div class="flex flex-col min-w-0">
+            <h1 class="text-base font-semibold text-text-primary truncate">
+              {{ loading ? '…' : (orchestrator?.name ?? 'Orchestrator') }}
+            </h1>
+            <p class="text-xs text-text-muted">
+              {{ workspaceName }}
+            </p>
+          </div>
+        </div>
       </div>
-      <div v-if="!loading" class="flex items-center gap-1 shrink-0">
+      <div v-if="!loading" class="hidden lg:flex items-center gap-1 shrink-0">
+        <button class="button is-transparent is-icon" title="Edit orchestrator" @click="openEditOrchestratorName">
+          <span class="material-symbols-outlined select-none">edit</span>
+        </button>
         <button
-          class="p-2 rounded text-text-muted hover:text-destructive hover:bg-fg/[0.06] transition-colors"
+          class="button is-transparent is-icon"
+          :title="orchestrator?.archived ? 'Unarchive orchestrator' : 'Archive orchestrator'"
+          @click="toggleArchive"
+        >
+          <span
+            class="material-symbols-outlined select-none"
+            :class="orchestrator?.archived ? 'text-primary' : 'text-warning'"
+            >{{ orchestrator?.archived ? 'unarchive' : 'inventory_2' }}</span
+          >
+        </button>
+        <button
+          class="button is-transparent is-icon"
           title="Delete orchestrator"
           @click="showDeleteModal = true"
         >
-          <span class="material-symbols-outlined select-none" style="font-size: 18px">delete</span>
+          <span class="material-symbols-outlined select-none text-destructive">delete</span>
         </button>
+      </div>
+
+      <div v-if="!loading" ref="mobileOrchestratorMenuRef" class="relative lg:hidden shrink-0">
+        <button
+          type="button"
+          class="button is-transparent is-icon"
+          aria-haspopup="true"
+          :aria-expanded="mobileOrchestratorMenuOpen"
+          title="Orchestrator actions"
+          @click.stop="mobileOrchestratorMenuOpen = !mobileOrchestratorMenuOpen"
+        >
+          <span class="material-symbols-outlined select-none">more_horiz</span>
+        </button>
+        <Transition name="mobile-orchestrator-menu-drop">
+          <div
+            v-if="mobileOrchestratorMenuOpen"
+            class="absolute right-0 top-full mt-1 z-50 min-w-[11rem] rounded-lg border border-border bg-surface py-1 shadow-lg"
+            role="menu"
+            @click.stop
+          >
+            <button
+              type="button"
+              class="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left text-text-primary hover:bg-fg/[0.06] transition-colors"
+              role="menuitem"
+              @click="
+                closeMobileOrchestratorMenu();
+                openEditOrchestratorName();
+              "
+            >
+              <span class="material-symbols-outlined text-base shrink-0">edit</span>
+              Edit
+            </button>
+            <button
+              type="button"
+              class="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left text-text-primary hover:bg-fg/[0.06] transition-colors"
+              role="menuitem"
+              @click="
+                closeMobileOrchestratorMenu();
+                toggleArchive();
+              "
+            >
+              <span
+                class="material-symbols-outlined text-base shrink-0"
+                :class="orchestrator?.archived ? 'text-primary' : 'text-warning'"
+                >{{ orchestrator?.archived ? 'unarchive' : 'inventory_2' }}</span
+              >
+              {{ orchestrator?.archived ? 'Unarchive' : 'Archive' }}
+            </button>
+            <button
+              type="button"
+              class="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left text-destructive hover:bg-destructive/[0.08] transition-colors"
+              role="menuitem"
+              @click="
+                closeMobileOrchestratorMenu();
+                showDeleteModal = true;
+              "
+            >
+              <span class="material-symbols-outlined text-base shrink-0">delete</span>
+              Delete
+            </button>
+          </div>
+        </Transition>
       </div>
     </div>
 
@@ -212,3 +355,25 @@ watch(
     />
   </div>
 </template>
+
+<style scoped>
+.mobile-orchestrator-menu-drop-enter-active,
+.mobile-orchestrator-menu-drop-leave-active {
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+  transform-origin: top right;
+}
+
+.mobile-orchestrator-menu-drop-enter-from,
+.mobile-orchestrator-menu-drop-leave-to {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.98);
+}
+
+.mobile-orchestrator-menu-drop-enter-to,
+.mobile-orchestrator-menu-drop-leave-from {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+</style>

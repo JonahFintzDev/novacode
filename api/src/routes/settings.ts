@@ -1,7 +1,6 @@
 // node_modules
-import type { FastifyInstance } from 'fastify';
-import { Type } from '@sinclair/typebox';
 import { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
+import { Type } from '@sinclair/typebox';
 
 // classes
 import { jwtPreHandler } from '../classes/auth';
@@ -16,11 +15,36 @@ import {
   readMcpClients,
   writeMcpClients
 } from '../classes/config';
-import type { McpClientServerConfig } from '../classes/config';
 import { checkMcpClients } from '../classes/mcpConnectivityCheck';
 import { getCursorModels } from '../classes/cursorModels';
 import { readSshKeyMaterial } from '../classes/sshKey';
 import { cursorAuthenticated } from './agentAuth';
+
+// types
+import type { FastifyInstance } from 'fastify';
+import type { McpClientServerConfig } from '../classes/config';
+
+type AppSettingsUser = {
+  gitUserName: string | null;
+  gitUserEmail: string | null;
+  theme: string | null;
+  autoTheme: boolean | null;
+  darkTheme: string | null;
+  lightTheme: string | null;
+  modelSelection: string | null;
+};
+
+type AppSettings = {
+  gitUserName: string | null;
+  gitUserEmail: string | null;
+  theme: string;
+  autoTheme: boolean;
+  darkTheme: string;
+  lightTheme: string;
+  modelSelection: string;
+  sshPublicKey: string;
+  sshPrivateKey: string;
+};
 
 const AppSettingsSchema = Type.Object({
   gitUserName: Type.Union([Type.String(), Type.Null()]),
@@ -37,11 +61,11 @@ const AppSettingsSchema = Type.Object({
 });
 
 export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
+  // -------------------------------------------------- Data --------------------------------------------------
   const fastifyInstance = fastify.withTypeProvider<TypeBoxTypeProvider>();
 
-  const appSettingsFromUser = (
-    user: { gitUserName: string | null; gitUserEmail: string | null; theme: string | null; autoTheme: boolean | null; darkTheme: string | null; lightTheme: string | null; modelSelection: string | null } | null
-  ) => {
+  // -------------------------------------------------- Methods --------------------------------------------------
+  const appSettingsFromUser = (user: AppSettingsUser | null): AppSettings => {
     const ssh = readSshKeyMaterial(config.configDir);
     return {
       gitUserName: user?.gitUserName ?? null,
@@ -56,6 +80,8 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
     };
   };
 
+  // -------------------------------------------------- Routes --------------------------------------------------
+  // GET /api/settings - get user settings
   fastifyInstance.get(
     '/api/settings',
     {
@@ -71,6 +97,7 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
     }
   );
 
+  // PUT /api/settings - update user settings
   fastifyInstance.put(
     '/api/settings',
     {
@@ -126,8 +153,7 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
     }
   );
 
-  // ── Cursor agent models (cached 4h) ────────────────────────────────────────
-
+  // GET /api/settings/cursor-models - list available cursor models
   const CursorModelOptionSchema = Type.Object({
     id: Type.String(),
     label: Type.String()
@@ -151,8 +177,7 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
     }
   );
 
-  // ── Mistral Vibe API key (stored in configDir/.vibe/.env) ───────────────────
-
+  // GET /api/settings/vibe-api-key - get vibe API key status
   fastifyInstance.get(
     '/api/settings/vibe-api-key',
     {
@@ -168,6 +193,7 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
     }
   );
 
+  // PUT /api/settings/vibe-api-key - set vibe API key
   fastifyInstance.put(
     '/api/settings/vibe-api-key',
     {
@@ -186,6 +212,7 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
     }
   );
 
+  // DELETE /api/settings/vibe-api-key - clear vibe API key
   fastifyInstance.delete(
     '/api/settings/vibe-api-key',
     {
@@ -202,8 +229,7 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
     }
   );
 
-  // ── Agent capabilities (Cursor / Claude) ─────────────────────────────────────
-
+  // GET /api/settings/agent-capabilities - get current agent availability
   fastifyInstance.get(
     '/api/settings/agent-capabilities',
     {
@@ -229,8 +255,7 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
     }
   );
 
-  // ── MCP client servers (sync to Cursor & Claude) ──────────────────────────
-
+  // GET /api/settings/mcp-clients - list MCP client servers
   const McpClientServerSchema = Type.Object({
     type: Type.Optional(Type.String()),
     command: Type.Optional(Type.String()),
@@ -256,6 +281,7 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
     }
   );
 
+  // PUT /api/settings/mcp-clients - replace MCP client servers
   fastifyInstance.put(
     '/api/settings/mcp-clients',
     {
@@ -281,6 +307,7 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
     detail: Type.Optional(Type.String())
   });
 
+  // POST /api/settings/mcp-clients/check - run MCP connectivity checks
   fastifyInstance.post(
     '/api/settings/mcp-clients/check',
     {

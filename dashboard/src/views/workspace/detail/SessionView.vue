@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // node_modules
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { useRoute, useRouter, RouterLink } from 'vue-router';
 
 // components
@@ -68,6 +68,36 @@ const isBulkArchiving = ref(false);
 const showBulkDeleteCombined = ref(false);
 const isBulkDeletingCombined = ref(false);
 const orchestratorSelectedIds = ref<Set<string>>(new Set());
+
+// Multiselect bar alignment with list items
+const listViewRef = ref<HTMLElement | null>(null);
+const archivedListViewRef = ref<HTMLElement | null>(null);
+const multiselectLeft = ref<number | null>(null);
+const multiselectWidth = ref<number | null>(null);
+
+function pickMultiselectAnchorEl(): HTMLElement | null {
+  if (viewMode.value !== 'list') return null;
+  if (showArchived.value && archivedListViewRef.value) return archivedListViewRef.value;
+  return listViewRef.value;
+}
+
+function updateMultiselectBarPosition(): void {
+  const anchor = pickMultiselectAnchorEl();
+  if (!anchor) {
+    multiselectLeft.value = null;
+    multiselectWidth.value = null;
+    return;
+  }
+
+  const rect = anchor.getBoundingClientRect();
+  // Position the fixed bar to match the list container geometry.
+  multiselectLeft.value = rect.left;
+  multiselectWidth.value = rect.width;
+}
+
+function scheduleUpdateMultiselectBarPosition(): void {
+  void nextTick(() => updateMultiselectBarPosition());
+}
 
 watch(viewMode, (v) => localStorage.setItem('sessionsViewMode', v));
 watch(orchestratorsViewMode, (v) => localStorage.setItem('orchestratorsViewMode', v));
@@ -687,10 +717,15 @@ onMounted(() => {
   ensureData();
   loadAgentCapabilities();
   fetchOrchestrators();
+
+  // Keep the fixed bar aligned with the list when layout changes.
+  window.addEventListener('resize', updateMultiselectBarPosition);
+  scheduleUpdateMultiselectBarPosition();
 });
 onBeforeUnmount(() => {
   if (longPressTimer.value) clearTimeout(longPressTimer.value);
   if (orchLongPressTimer.value) clearTimeout(orchLongPressTimer.value);
+  window.removeEventListener('resize', updateMultiselectBarPosition);
 });
 watch(workspaceId, (id) => {
   if (!id) return;
@@ -700,7 +735,15 @@ watch(workspaceId, (id) => {
 });
 watch(showArchived, () => {
   clearSelection();
+  scheduleUpdateMultiselectBarPosition();
 });
+
+watch(
+  () => [selectionActive.value, orchestratorSelectionActive.value, viewMode.value],
+  ([selActive, orchSelActive]) => {
+    if (selActive || orchSelActive) scheduleUpdateMultiselectBarPosition();
+  }
+);
 
 // Poll orchestrators list while any is running (so list shows run state)
 const orchestratorPollId = ref<ReturnType<typeof setInterval> | null>(null);
@@ -898,7 +941,11 @@ onBeforeUnmount(() => {
         </RouterLink>
       </TransitionGroup>
     </div>
-    <div v-else-if="viewMode === 'list'" class="list-view">
+    <div
+      v-else-if="viewMode === 'list'"
+      ref="listViewRef"
+      class="list-view"
+    >
       <TransitionGroup name="list-stagger" tag="div" class="list-view-items">
         <div
           v-for="(item, index) in combinedItems"
@@ -1253,7 +1300,7 @@ onBeforeUnmount(() => {
             </template>
           </div>
 
-          <div v-else class="list-view">
+            <div v-else class="list-view" ref="archivedListViewRef">
             <TransitionGroup name="list-stagger" tag="div" class="list-view-items">
               <RouterLink
                 v-for="(session, index) in filteredArchivedSessions"
@@ -1460,7 +1507,17 @@ onBeforeUnmount(() => {
   <Transition name="fade">
     <div
       v-if="selectionActive || orchestratorSelectionActive"
-      class="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 w-[min(960px,calc(100%-1rem))] bg-surface border border-border rounded-xl px-3 py-2 shadow-xl"
+      class="fixed bottom-4 z-40 bg-surface border border-border rounded-xl px-3 py-2 shadow-xl"
+      :class="multiselectLeft === null ? 'left-1/2 -translate-x-1/2 w-[min(960px,calc(100%-1rem))]' : ''"
+      :style="
+        multiselectLeft === null
+          ? undefined
+          : {
+              left: `${multiselectLeft}px`,
+              width: `${multiselectWidth ?? 0}px`,
+              transform: 'translateX(0)'
+            }
+      "
     >
       <div class="flex flex-wrap items-center justify-between gap-y-2 gap-x-3 w-full">
         <div class="flex flex-wrap items-center gap-x-2 gap-y-2 min-w-0">

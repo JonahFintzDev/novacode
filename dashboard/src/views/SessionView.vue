@@ -221,6 +221,8 @@ onUnmounted(() => {
         v-else-if="mobileTab === 'chat' && activeKind === 'orchestrator' && orchestratorId"
         :workspace-id="workspaceId"
         :orchestrator-id="orchestratorId"
+        :show-sidebar-toggle="true"
+        @toggle-sidebar="handleSidebarToggle"
       />
     </div>
   </div>

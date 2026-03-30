@@ -155,10 +155,14 @@ const selectTheme = async (themeId: string): Promise<void> => {
 };
 
 const selectDarkTheme = async (themeId: string): Promise<void> => {
-  if (themeId === darkThemeId.value || bSavingTheme.value) return;
+  if (themeId === darkThemeId.value || bSavingTheme.value) {
+    return;
+  }
   darkThemeId.value = themeId;
   localStorage.setItem('darkTheme', themeId);
-  if (bAutoTheme.value) applyTheme(resolveAutoTheme());
+  if (bAutoTheme.value) {
+    applyTheme(resolveAutoTheme());
+  }
   bSavingTheme.value = true;
   try {
     await settingsApi.update({ darkTheme: themeId });
@@ -170,10 +174,14 @@ const selectDarkTheme = async (themeId: string): Promise<void> => {
 };
 
 const selectLightTheme = async (themeId: string): Promise<void> => {
-  if (themeId === lightThemeId.value || bSavingTheme.value) return;
+  if (themeId === lightThemeId.value || bSavingTheme.value) {
+    return;
+  }
   lightThemeId.value = themeId;
   localStorage.setItem('lightTheme', themeId);
-  if (bAutoTheme.value) applyTheme(resolveAutoTheme());
+  if (bAutoTheme.value) {
+    applyTheme(resolveAutoTheme());
+  }
   bSavingTheme.value = true;
   try {
     await settingsApi.update({ lightTheme: themeId });
@@ -249,7 +257,9 @@ const loadSettings = async (): Promise<void> => {
 };
 
 const copySshPublic = async (): Promise<void> => {
-  if (!sshPublicKey.value) return;
+  if (!sshPublicKey.value) {
+    return;
+  }
   try {
     await navigator.clipboard.writeText(sshPublicKey.value);
     bCopiedSshPublic.value = true;
@@ -262,7 +272,9 @@ const copySshPublic = async (): Promise<void> => {
 };
 
 const copySshPrivate = async (): Promise<void> => {
-  if (!sshPrivateKey.value) return;
+  if (!sshPrivateKey.value) {
+    return;
+  }
   try {
     await navigator.clipboard.writeText(sshPrivateKey.value);
     bCopiedSshPrivate.value = true;
@@ -278,12 +290,12 @@ const saveGitSettings = async (): Promise<void> => {
   bSavingGit.value = true;
   bGitSaved.value = false;
   try {
-    const res = await settingsApi.update({
+    const response = await settingsApi.update({
       gitUserName: gitForm.value.name.trim() || null,
       gitUserEmail: gitForm.value.email.trim() || null
     });
-    sshPublicKey.value = res.data.sshPublicKey ?? '';
-    sshPrivateKey.value = res.data.sshPrivateKey ?? '';
+    sshPublicKey.value = response.data.sshPublicKey ?? '';
+    sshPrivateKey.value = response.data.sshPrivateKey ?? '';
     bGitSaved.value = true;
     setTimeout(() => {
       bGitSaved.value = false;
@@ -476,7 +488,9 @@ const openAddMcpClient = (): void => {
 
 const openEditMcpClient = (name: string): void => {
   const server = mcpClients.value[name];
-  if (!server) return;
+  if (!server) {
+    return;
+  }
   mcpClientEditName.value = name;
   const isUrl =
     (!!server.url && !server.command) || server.type === 'http' || server.type === 'sse';
@@ -518,19 +532,25 @@ const saveMcpClient = async (): Promise<void> => {
     server.command = form.command.trim();
     const args = form.args
       .split('\n')
-      .map((a) => a.trim())
+      .map((argument) => argument.trim())
       .filter(Boolean);
-    if (args.length > 0) server.args = args;
+    if (args.length > 0) {
+      server.args = args;
+    }
     const env: Record<string, string> = {};
     for (const line of form.env.split('\n')) {
       const trimmed = line.trim();
-      if (!trimmed) continue;
-      const eqIdx = trimmed.indexOf('=');
-      if (eqIdx > 0) {
-        env[trimmed.slice(0, eqIdx).trim()] = trimmed.slice(eqIdx + 1).trim();
+      if (!trimmed) {
+        continue;
+      }
+      const equalsIndex = trimmed.indexOf('=');
+      if (equalsIndex > 0) {
+        env[trimmed.slice(0, equalsIndex).trim()] = trimmed.slice(equalsIndex + 1).trim();
       }
     }
-    if (Object.keys(env).length > 0) server.env = env;
+    if (Object.keys(env).length > 0) {
+      server.env = env;
+    }
   } else {
     if (!form.url.trim()) {
       mcpClientFormError.value = 'URL is required.';
@@ -540,13 +560,17 @@ const saveMcpClient = async (): Promise<void> => {
     const headers: Record<string, string> = {};
     for (const line of form.headers.split('\n')) {
       const trimmed = line.trim();
-      if (!trimmed) continue;
-      const colonIdx = trimmed.indexOf(':');
-      if (colonIdx > 0) {
-        headers[trimmed.slice(0, colonIdx).trim()] = trimmed.slice(colonIdx + 1).trim();
+      if (!trimmed) {
+        continue;
+      }
+      const colonIndex = trimmed.indexOf(':');
+      if (colonIndex > 0) {
+        headers[trimmed.slice(0, colonIndex).trim()] = trimmed.slice(colonIndex + 1).trim();
       }
     }
-    if (Object.keys(headers).length > 0) server.headers = headers;
+    if (Object.keys(headers).length > 0) {
+      server.headers = headers;
+    }
   }
 
   const updated = { ...mcpClients.value };

@@ -33,6 +33,8 @@ Run [Cursor Agent](https://cursor.com) and [Claude Code](https://claude.ai/code)
 
 - **[Current functionality](../functionality.md)** — canonical inventory of what is implemented today (API routes, WebSockets, UI, and known limitations). Prefer this over marketing copy when in doubt.
 - **[Feature ideas](../feature-ideas.md)** — consolidated backlog of possible improvements (not a commitment); merges themes from `app/FEATURES.md` and `app/docs/improvement-plan.md`.
+- **[Security audit checklist (2026-03-30)](../docs/security/security-audit-checklist-2026-03-30.md)** — scoped audit map covering auth, authorization, input/output handling, command execution, secrets, dependencies, CI/CD, and monitoring review paths.
+- **[Security findings: auth/session/authz (2026-03-30)](../docs/security/security-findings-authz-2026-03-30.md)** — focused findings for authentication, session handling, authorization, and data access controls.
 - **Repository root** [`README.md`](../README.md) — monorepo layout (`app/` + `web/`) and short status summary.
 
 ---
@@ -43,9 +45,9 @@ Run [Cursor Agent](https://cursor.com) and [Claude Code](https://claude.ai/code)
 |---|---|
 | **Home** | Session overview: busy and idle counts, recently active strip, optional compact list; jump to workspaces from there. |
 | **Workspaces** | Map any directory on your host to a named project. Group, color-code, tag, and archive. |
-| **Sessions** | Start a Cursor Agent or Claude Code session per workspace. Streaming chat over WebSocket, image attachments, tags, archive. |
+| **Sessions** | Start a Cursor Agent or Claude Code session per workspace. Streaming chat over WebSocket, image attachments, tags, archive, and bulk actions via the sessions list multiselect bar. |
 | **Terminal** | Full PTY-backed terminal output via `node-pty` and xterm.js. |
-| **Orchestrators** | Multi-step task plans: decompose a goal into subtasks, run each step in its own session. Deleting an orchestrator removes its step sessions too. |
+| **Orchestrators** | Multi-step task plans: decompose a goal into subtasks, run each step in its own session. The orchestrator detail header matches session controls (sidebar toggle, workspace subtitle, edit/archive/delete actions). Deleting an orchestrator removes its step sessions too. |
 | **Automations** | Schedule recurring agent prompts per workspace (cron-style intervals). |
 | **Git** | Per-workspace Git status, diffs, and multi-repo discovery — right in the UI. |
 | **File browser** | Browse and read/write files inside a workspace without leaving the app. |
@@ -283,6 +285,10 @@ app/
 ## Contributing
 
 Pull requests are welcome. For larger changes, please open an issue first to discuss what you'd like to change.
+
+### Coding conventions
+
+Refactors and new code should follow the shared conventions in `/data-root/personal/CODING_CONVENTIONS.md` (import grouping, Vue section layout, boolean naming, and explicit control-flow braces).
 
 ---
 

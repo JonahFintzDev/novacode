@@ -11,11 +11,18 @@ defineProps<{
   onMenuClick: () => void;
 }>();
 
+// -------------------------------------------------- Store --------------------------------------------------
 const auth = useAuthStore();
 const router = useRouter();
+
+// -------------------------------------------------- Data --------------------------------------------------
 const bUserMenuOpen = ref(false);
 const userMenuRef = ref<HTMLElement | null>(null);
 
+// -------------------------------------------------- Computed --------------------------------------------------
+// (none)
+
+// -------------------------------------------------- Methods --------------------------------------------------
 function toggleUserMenu(): void {
   bUserMenuOpen.value = !bUserMenuOpen.value;
 }
@@ -25,7 +32,9 @@ function closeUserMenu(): void {
 }
 
 function handleDocumentClick(event: MouseEvent): void {
-  if (!bUserMenuOpen.value || !userMenuRef.value) return;
+  if (!bUserMenuOpen.value || !userMenuRef.value) {
+    return;
+  }
   if (!userMenuRef.value.contains(event.target as Node)) {
     closeUserMenu();
   }
@@ -43,6 +52,7 @@ function handleLogout(): void {
   closeUserMenu();
 }
 
+// -------------------------------------------------- Lifecycle --------------------------------------------------
 onMounted(() => {
   document.addEventListener('click', handleDocumentClick);
   document.addEventListener('keydown', handleDocumentKeydown);
@@ -115,6 +125,7 @@ router.afterEach(() => {
       aria-label="User menu"
       aria-haspopup="true"
       :aria-expanded="bUserMenuOpen"
+      @click.stop="toggleUserMenu"
     >
       <span
         class="hidden group-hover:text-text-primary sm:block text-sm text-text-muted truncate font-semibold max-w-[120px] mr-2"
@@ -124,7 +135,6 @@ router.afterEach(() => {
       <button
         type="button"
         class="p-2 group-hover:bg-transparent flex items-center justify-center bg-input text-text-muted cursor-pointer rounded-full transition-colors"
-        @click.stop="toggleUserMenu"
       >
         <span class="material-symbols-outlined select-none text-xl">person</span>
       </button>

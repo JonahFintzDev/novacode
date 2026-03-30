@@ -305,7 +305,7 @@ hr {
 
   .grid-view-items {
     @apply grid gap-4;
-    grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(24rem, 1fr));
     .grid-item {
       @apply bg-card/30 p-4 rounded-md border border-border overflow-hidden cursor-pointer;
       @apply transition-all hover:bg-card/40 hover:border-primary/50;

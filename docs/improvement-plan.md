@@ -245,6 +245,8 @@ This document outlines a detailed plan for **new features**, **UI improvements**
   - Add `npm run typecheck` (or equivalent) at repo root that runs both API and dashboard type checks.
 - **README**
   - The main README is clear; add a “Contributing” or “Development” section with steps to run tests, lint, and apply migrations.
+- **Coding conventions**
+  - Keep `app/dashboard` Vue components and `app/api` route files aligned with `/data-root/personal/CODING_CONVENTIONS.md` (import groups, section headers, boolean naming, and block-style control flow).
 
 ---
 
