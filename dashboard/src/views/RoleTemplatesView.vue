@@ -124,7 +124,8 @@ async function createTemplate(): Promise<void> {
     showSuccess('Template created');
   } catch (e: unknown) {
     const caughtError = e as { response?: { data?: { error?: string } }; message?: string };
-    createError.value = caughtError.response?.data?.error ?? caughtError.message ?? 'Failed to create template';
+    createError.value =
+      caughtError.response?.data?.error ?? caughtError.message ?? 'Failed to create template';
   } finally {
     isCreating.value = false;
   }
@@ -187,7 +188,8 @@ async function saveEdit(): Promise<void> {
     showSuccess('Template updated');
   } catch (e: unknown) {
     const caughtError = e as { response?: { data?: { error?: string } }; message?: string };
-    editError.value = caughtError.response?.data?.error ?? caughtError.message ?? 'Failed to update template';
+    editError.value =
+      caughtError.response?.data?.error ?? caughtError.message ?? 'Failed to update template';
   } finally {
     isSavingEdit.value = false;
   }
@@ -215,7 +217,8 @@ async function doDelete(): Promise<void> {
     showSuccess('Template deleted');
   } catch (e: unknown) {
     const caughtError = e as { response?: { data?: { error?: string } }; message?: string };
-    deleteError.value = caughtError.response?.data?.error ?? caughtError.message ?? 'Failed to delete template';
+    deleteError.value =
+      caughtError.response?.data?.error ?? caughtError.message ?? 'Failed to delete template';
   } finally {
     isDeleting.value = false;
   }
@@ -235,7 +238,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <PageShell max-width="3xl">
+  <PageShell max-width="7xl">
     <!-- Header -->
     <PageHeader
       icon="manage_accounts"
@@ -297,11 +300,7 @@ onMounted(() => {
     <!-- Templates -->
     <div v-else-if="viewMode === 'grid'" class="grid-view">
       <div class="grid-view-items">
-        <article
-          v-for="template in templates"
-          :key="template.id"
-          class="group grid-item"
-        >
+        <article v-for="template in templates" :key="template.id" class="group grid-item">
           <div class="top">
             <div class="icon">
               <span class="material-symbols-outlined">text_fields</span>
@@ -311,7 +310,9 @@ onMounted(() => {
               <p class="text-xs text-text-muted line-clamp-2 min-h-[2.5rem]">
                 {{ template.description || 'No description' }}
               </p>
-              <p class="text-[11px] text-text-muted mt-1">Updated {{ formatDate(template.updatedAt) }}</p>
+              <p class="text-[11px] text-text-muted mt-1">
+                Updated {{ formatDate(template.updatedAt) }}
+              </p>
             </div>
             <div class="buttons">
               <button
@@ -333,11 +334,7 @@ onMounted(() => {
     </div>
     <div v-else class="list-view">
       <div class="list-view-items">
-        <article
-          v-for="template in templates"
-          :key="template.id"
-          class="group list-item"
-        >
+        <article v-for="template in templates" :key="template.id" class="group list-item">
           <div class="cell flex-1 min-w-0">
             <p class="title truncate">{{ template.name }}</p>
             <p class="text-xs text-text-muted line-clamp-1 mt-1">
@@ -389,7 +386,9 @@ onMounted(() => {
             />
           </div>
           <div>
-            <label class="block text-xs font-medium text-text-muted mb-1">Description (optional)</label>
+            <label class="block text-xs font-medium text-text-muted mb-1"
+              >Description (optional)</label
+            >
             <textarea
               v-model="newDescription"
               rows="2"
@@ -460,7 +459,9 @@ onMounted(() => {
             />
           </div>
           <div>
-            <label class="block text-xs font-medium text-text-muted mb-1">Description (optional)</label>
+            <label class="block text-xs font-medium text-text-muted mb-1"
+              >Description (optional)</label
+            >
             <textarea
               v-model="editDescription"
               rows="2"

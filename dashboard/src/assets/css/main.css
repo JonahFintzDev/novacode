@@ -305,7 +305,7 @@ hr {
 
   .grid-view-items {
     @apply grid gap-4;
-    grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
     .grid-item {
       @apply bg-card/30 p-4 rounded-md border border-border overflow-hidden cursor-pointer;
       @apply transition-all hover:bg-card/40 hover:border-primary/50;
@@ -316,7 +316,7 @@ hr {
       .top {
         @apply flex items-center gap-4;
         .icon {
-          @apply w-9 h-9 flex items-center justify-center bg-primary/10 rounded-md;
+          @apply w-9 h-9 flex items-center justify-center bg-primary/10 rounded-md shrink-0;
           .material-symbols-outlined {
             @apply text-primary text-lg;
             @apply transition-all duration-300;
@@ -329,7 +329,7 @@ hr {
             @apply text-sm font-bold text-text-primary;
           }
           .subtitle {
-            @apply text-xs text-text-muted;
+            @apply text-xs text-text-muted break-all;
           }
           .tag {
             @apply text-xs  bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20 font-medium;

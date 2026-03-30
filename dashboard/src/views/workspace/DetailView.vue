@@ -6,6 +6,9 @@ import { useRoute, RouterLink } from 'vue-router';
 // stores
 import { useWorkspacesStore } from '@/stores/workspaces';
 
+// components
+import PageShell from '@/components/layout/PageShell.vue';
+
 // classes
 import { orchestratorApi, settingsApi } from '@/classes/api';
 
@@ -138,10 +141,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main
-    class="w-full mx-auto px-4 md:px-6 py-4"
-    :class="isFilesRoute ? 'max-w-7xl flex flex-col h-full' : 'max-w-7xl'"
-  >
+  <PageShell max-width="7xl" padding="py-4">
     <!-- Breadcrumb -->
     <div class="breadcrumps">
       <RouterLink :to="{ name: 'workspaces' }">
@@ -174,7 +174,7 @@ onBeforeUnmount(() => {
         </h1>
         <p
           style="line-height: 1"
-          class="text-xs font-mono text-text-muted mt-1 flex items-center gap-1 mt-2"
+          class="text-xs font-mono text-text-muted mt-1 flex items-center gap-1"
         >
           {{ workspace?.path }}
         </p>
@@ -254,7 +254,7 @@ onBeforeUnmount(() => {
         Back to workspaces
       </RouterLink>
     </div>
-  </main>
+  </PageShell>
 </template>
 
 <style scoped>

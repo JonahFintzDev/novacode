@@ -4,6 +4,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 // components
+import PageShell from '@/components/layout/PageShell.vue';
 import WorkspaceDeleteModal from '@/components/workspace/DeleteModal.vue';
 import WorkspaceEditModal from '@/components/workspace/EditModal.vue';
 
@@ -227,7 +228,7 @@ onMounted((): void => {
 </script>
 
 <template>
-  <main class="max-w-7xl mx-auto px-4 md:px-6 py-8 flex-1 flex flex-col">
+  <PageShell>
     <!-- Breadcrumb -->
 
     <!-- Header -->
@@ -401,7 +402,7 @@ onMounted((): void => {
               >chevron_right</span
             >
             Archived
-            <span class="text-xs bg-fg/[0.07] border border-fg/[0.1] rounded-full px-2 py-0.5">{{
+            <span class="text-xs bg-fg/[0.07] border border-fg/10 rounded-full px-2 py-0.5">{{
               archivedCount
             }}</span>
           </button>
@@ -474,7 +475,7 @@ onMounted((): void => {
         </div>
       </div>
     </Transition>
-  </main>
+  </PageShell>
 
   <WorkspaceEditModal
     v-model="bShowWorkspaceModal"
