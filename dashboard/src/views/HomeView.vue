@@ -5,6 +5,9 @@ import { computed, onMounted, ref, watch } from 'vue';
 // stores
 import { useWorkspacesStore } from '@/stores/workspaces';
 
+// components
+import PageShell from '@/components/layout/PageShell.vue';
+
 // types
 import type { Session } from '@/@types/index';
 
@@ -73,22 +76,23 @@ onMounted(() => {
 </script>
 
 <template>
-  <main class="max-w-7xl mx-auto px-4 md:px-6 py-8 flex-1 flex flex-col gap-8">
-    <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-      <div>
-        <h1 class="text-xl font-bold text-text-primary">Home</h1>
-        <p class="text-sm text-text-muted mt-1 max-w-xl">
-          Session activity across workspaces. Open
-          <RouterLink
-            :to="{ name: 'workspaces' }"
-            class="text-primary hover:underline font-medium"
-          >
-            Workspaces
-          </RouterLink>
-          to add projects or manage folders.
-        </p>
+  <PageShell>
+    <div class="flex flex-col gap-8">
+      <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+        <div>
+          <h1 class="text-xl font-bold text-text-primary">Home</h1>
+          <p class="text-sm text-text-muted mt-1 max-w-xl">
+            Session activity across workspaces. Open
+            <RouterLink
+              :to="{ name: 'workspaces' }"
+              class="text-primary hover:underline font-medium"
+            >
+              Workspaces
+            </RouterLink>
+            to add projects or manage folders.
+          </p>
+        </div>
       </div>
-    </div>
 
     <!-- Stats -->
     <div
@@ -169,7 +173,7 @@ onMounted(() => {
     </section>
 
     <!-- Full list -->
-    <section aria-labelledby="home-all-heading">
+      <section aria-labelledby="home-all-heading">
       <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
         <h2 id="home-all-heading" class="text-sm font-semibold text-text-primary">
           All active sessions
@@ -256,6 +260,7 @@ onMounted(() => {
           </RouterLink>
         </li>
       </ul>
-    </section>
-  </main>
+      </section>
+    </div>
+  </PageShell>
 </template>

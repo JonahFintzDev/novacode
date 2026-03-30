@@ -238,7 +238,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <PageShell max-width="7xl">
+  <PageShell>
     <!-- Header -->
     <PageHeader
       icon="manage_accounts"

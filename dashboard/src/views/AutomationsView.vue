@@ -394,7 +394,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <PageShell max-width="7xl">
+  <PageShell>
     <!-- Header -->
     <PageHeader
       icon="schedule"

@@ -5,6 +5,9 @@ import { ref } from 'vue';
 // stores
 import { useAuthStore } from '@/stores/auth';
 
+// components
+import PageShell from '@/components/layout/PageShell.vue';
+
 // classes
 import { authApi } from '@/classes/api';
 
@@ -95,120 +98,118 @@ const changePassword = async (): Promise<void> => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-bg">
-    <main class="max-w-3xl mx-auto px-4 md:px-6 py-8">
-      <div class="mb-6">
-        <h1 class="text-xl font-semibold text-text-primary">Account</h1>
-        <p class="text-sm text-text-muted mt-1">
-          Change your username or password. You will stay signed in after changing username.
-        </p>
+  <PageShell>
+    <div class="mb-6">
+      <h1 class="text-xl font-semibold text-text-primary">Account</h1>
+      <p class="text-sm text-text-muted mt-1">
+        Change your username or password. You will stay signed in after changing username.
+      </p>
+    </div>
+
+    <div class="space-y-8">
+      <!-- Change username -->
+      <div class="box bg-surface!">
+        <h2 class="text-md font-semibold text-text-primary mb-3">Change username</h2>
+        <hr />
+        <p class="message is-info mb-3">Current: {{ authStore.username ?? '—' }}</p>
+        <div class="field">
+          <div class="label">New username</div>
+          <div class="input-wrap">
+            <span class="icon">
+              <span class="material-symbols-outlined">person</span>
+            </span>
+            <input
+              v-model="accountNewUsername"
+              type="text"
+              placeholder="New username"
+              :disabled="bChangingUsername"
+            />
+          </div>
+          <p v-if="accountUsernameError" class="hint is-error">
+            {{ accountUsernameError }}
+          </p>
+        </div>
+        <div class="flex justify-end mt-4">
+          <button
+            class="button is-primary"
+            :disabled="bChangingUsername || !accountNewUsername.trim()"
+            @click="changeUsername"
+          >
+            <div v-if="bChangingUsername" class="loading-spinner"></div>
+            Update username
+          </button>
+        </div>
+        <p v-if="accountUsernameSuccess" class="message is-success mt-2">Username updated.</p>
       </div>
 
-      <div class="space-y-8">
-        <!-- Change username -->
-        <div class="box bg-surface!">
-          <h2 class="text-md font-semibold text-text-primary mb-3">Change username</h2>
-          <hr />
-          <p class="message is-info mb-3">Current: {{ authStore.username ?? '—' }}</p>
-          <div class="field">
-            <div class="label">New username</div>
-            <div class="input-wrap">
-              <span class="icon">
-                <span class="material-symbols-outlined">person</span>
-              </span>
-              <input
-                v-model="accountNewUsername"
-                type="text"
-                placeholder="New username"
-                :disabled="bChangingUsername"
-              />
-            </div>
-            <p v-if="accountUsernameError" class="hint is-error">
-              {{ accountUsernameError }}
-            </p>
+      <!-- Change password -->
+      <div class="box bg-surface!">
+        <h2 class="text-md font-semibold text-text-primary mb-3">Change password</h2>
+        <hr />
+        <div class="field">
+          <div class="label">Current password</div>
+          <div class="input-wrap">
+            <span class="icon">
+              <span class="material-symbols-outlined">lock</span>
+            </span>
+            <input
+              v-model="accountCurrentPassword"
+              type="password"
+              placeholder="Current password"
+              :disabled="bChangingPassword"
+            />
           </div>
-          <div class="flex justify-end mt-4">
-            <button
-              class="button is-primary"
-              :disabled="bChangingUsername || !accountNewUsername.trim()"
-              @click="changeUsername"
-            >
-              <div v-if="bChangingUsername" class="loading-spinner"></div>
-              Update username
-            </button>
+        </div>
+        <div class="field mt-2">
+          <div class="label">New password</div>
+          <div class="input-wrap">
+            <span class="icon">
+              <span class="material-symbols-outlined">lock</span>
+            </span>
+            <input
+              v-model="accountNewPassword"
+              type="password"
+              placeholder="At least 8 characters"
+              :disabled="bChangingPassword"
+            />
           </div>
-          <p v-if="accountUsernameSuccess" class="message is-success mt-2">Username updated.</p>
+        </div>
+        <div class="field mt-2">
+          <div class="label">New password</div>
+          <div class="input-wrap">
+            <span class="icon">
+              <span class="material-symbols-outlined">lock</span>
+            </span>
+            <input
+              v-model="accountConfirmPassword"
+              type="password"
+              placeholder="Confirm new password"
+              :disabled="bChangingPassword"
+            />
+          </div>
+          <p v-if="!accountConfirmPassword" class="hint is-error">
+            {{ accountPasswordError }}
+          </p>
         </div>
 
-        <!-- Change password -->
-        <div class="box bg-surface!">
-          <h2 class="text-md font-semibold text-text-primary mb-3">Change password</h2>
-          <hr />
-          <div class="field">
-            <div class="label">Current password</div>
-            <div class="input-wrap">
-              <span class="icon">
-                <span class="material-symbols-outlined">lock</span>
-              </span>
-              <input
-                v-model="accountCurrentPassword"
-                type="password"
-                placeholder="Current password"
-                :disabled="bChangingPassword"
-              />
-            </div>
-          </div>
-          <div class="field mt-2">
-            <div class="label">New password</div>
-            <div class="input-wrap">
-              <span class="icon">
-                <span class="material-symbols-outlined">lock</span>
-              </span>
-              <input
-                v-model="accountNewPassword"
-                type="password"
-                placeholder="At least 8 characters"
-                :disabled="bChangingPassword"
-              />
-            </div>
-          </div>
-          <div class="field mt-2">
-            <div class="label">New password</div>
-            <div class="input-wrap">
-              <span class="icon">
-                <span class="material-symbols-outlined">lock</span>
-              </span>
-              <input
-                v-model="accountConfirmPassword"
-                type="password"
-                placeholder="Confirm new password"
-                :disabled="bChangingPassword"
-              />
-            </div>
-            <p v-if="!accountConfirmPassword" class="hint is-error">
-              {{ accountPasswordError }}
-            </p>
-          </div>
+        <div v-if="accountPasswordSuccess" class="message is-success">Password updated.</div>
 
-          <div v-if="accountPasswordSuccess" class="message is-success">Password updated.</div>
-
-          <div class="flex justify-end mt-4">
-            <button
-              class="button is-primary"
-              :disabled="
-                bChangingPassword ||
-                !accountCurrentPassword ||
-                !accountNewPassword ||
-                !accountConfirmPassword
-              "
-              @click="changePassword"
-            >
-              <div v-if="bChangingPassword" class="loading-spinner"></div>
-              Update password
-            </button>
-          </div>
+        <div class="flex justify-end mt-4">
+          <button
+            class="button is-primary"
+            :disabled="
+              bChangingPassword ||
+              !accountCurrentPassword ||
+              !accountNewPassword ||
+              !accountConfirmPassword
+            "
+            @click="changePassword"
+          >
+            <div v-if="bChangingPassword" class="loading-spinner"></div>
+            Update password
+          </button>
         </div>
       </div>
-    </main>
-  </div>
+    </div>
+  </PageShell>
 </template>

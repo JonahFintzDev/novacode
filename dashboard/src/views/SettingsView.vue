@@ -57,7 +57,9 @@ const bCopiedSshPublic = ref<boolean>(false);
 const bCopiedSshPrivate = ref<boolean>(false);
 
 const activeThemeId = ref<string>(localStorage.getItem('theme') ?? DEFAULT_THEME_ID);
-const bAutoTheme = ref<boolean>(localStorage.getItem('autoTheme') === 'true');
+const bAutoTheme = ref<boolean>(
+  localStorage.getItem('autoTheme') === null ? true : localStorage.getItem('autoTheme') === 'true'
+);
 const darkThemeId = ref<string>(localStorage.getItem('darkTheme') ?? DEFAULT_DARK_THEME_ID);
 const lightThemeId = ref<string>(localStorage.getItem('lightTheme') ?? DEFAULT_LIGHT_THEME_ID);
 const bSavingTheme = ref<boolean>(false);
@@ -216,8 +218,18 @@ const loadSettings = async (): Promise<void> => {
       localStorage.setItem('lightTheme', response.data.lightTheme);
     }
     if (typeof response.data.autoTheme === 'boolean') {
-      bAutoTheme.value = response.data.autoTheme;
-      localStorage.setItem('autoTheme', String(response.data.autoTheme));
+      const existingAutoTheme = localStorage.getItem('autoTheme');
+      if (existingAutoTheme !== null) {
+        bAutoTheme.value = response.data.autoTheme;
+        localStorage.setItem('autoTheme', String(response.data.autoTheme));
+      } else {
+        // Default behavior: follow OS/browser unless the user has explicitly set
+        // auto-theme in localStorage.
+        bAutoTheme.value = true;
+        if (response.data.autoTheme === true) {
+          localStorage.setItem('autoTheme', 'true');
+        }
+      }
     }
     if (response.data.theme) {
       activeThemeId.value = response.data.theme;
@@ -596,7 +608,7 @@ onMounted((): void => {
 </script>
 
 <template>
-  <PageShell max-width="3xl">
+  <PageShell>
     <PageHeader
       title="Settings"
       subtitle="Configure agent authentication, appearance, and preferences."

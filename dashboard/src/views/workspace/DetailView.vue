@@ -141,7 +141,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <PageShell max-width="7xl" padding="py-4">
+  <PageShell>
     <!-- Breadcrumb -->
     <div class="breadcrumps">
       <RouterLink :to="{ name: 'workspaces' }">

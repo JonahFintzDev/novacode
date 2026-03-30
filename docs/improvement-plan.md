@@ -52,6 +52,7 @@ This document outlines a detailed plan for **new features**, **UI improvements**
   - Outgoing webhooks on events (e.g. “orchestrator completed”, “session created”) for CI or external tools.
 - **Slack/Discord/Teams**
   - Optional bot to create sessions or run orchestrators from chat.
+
 ### 1.6 Notifications and feedback
 
 - **In-app notification center**
@@ -78,9 +79,6 @@ This document outlines a detailed plan for **new features**, **UI improvements**
   - Add breadcrumbs (e.g. Workspaces → Workspace name → Sessions) on workspace, session, and orchestrator views to improve orientation and back-navigation.
 - **Sticky headers**
   - Keep section headers (e.g. “Orchestrators”, “Sessions”) or toolbar sticky while scrolling long lists so actions remain visible.
-
-- **Shared page container**
-  - Use the `PageShell` wrapper for workspace views so content uses consistent max-width/padding and reliably fills available space in the flex layout.
 
 ### 2.2 Navigation and information architecture
 
@@ -252,16 +250,16 @@ This document outlines a detailed plan for **new features**, **UI improvements**
 
 ## Summary table
 
-| Area              | Priority (suggested) | Effort  |
-|-------------------|----------------------|--------|
-| Global API error handling + toasts | High  | Medium |
-| Split WorkspaceView + centralize category helpers | High | Medium |
-| 404 + breadcrumbs | Medium | Low    |
-| Session/orchestrator search | Medium | Medium |
-| Re-run orchestrator from step N | Medium | Medium |
-| Security fixes (path traversal, custom agent) | High | Medium |
-| Tests (unit + E2E) | High | High   |
-| In-app onboarding/help | Low | Medium |
-| Webhooks / notification center | Low | Medium–High |
+| Area                                              | Priority (suggested) | Effort      |
+| ------------------------------------------------- | -------------------- | ----------- |
+| Global API error handling + toasts                | High                 | Medium      |
+| Split WorkspaceView + centralize category helpers | High                 | Medium      |
+| 404 + breadcrumbs                                 | Medium               | Low         |
+| Session/orchestrator search                       | Medium               | Medium      |
+| Re-run orchestrator from step N                   | Medium               | Medium      |
+| Security fixes (path traversal, custom agent)     | High                 | Medium      |
+| Tests (unit + E2E)                                | High                 | High        |
+| In-app onboarding/help                            | Low                  | Medium      |
+| Webhooks / notification center                    | Low                  | Medium–High |
 
 This plan can be used to pick a subset of items per release and to track progress over time.

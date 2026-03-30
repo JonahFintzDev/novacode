@@ -49,7 +49,14 @@ async function syncSettingsFromDb(): Promise<void> {
     if (data.darkTheme) localStorage.setItem('darkTheme', data.darkTheme);
     if (data.lightTheme) localStorage.setItem('lightTheme', data.lightTheme);
     if (typeof data.autoTheme === 'boolean') {
-      localStorage.setItem('autoTheme', String(data.autoTheme));
+      // If the user never touched auto-theme, default to following OS/browser.
+      // Respect an explicit localStorage choice when it already exists.
+      const existingAutoTheme = localStorage.getItem('autoTheme');
+      if (existingAutoTheme !== null) {
+        localStorage.setItem('autoTheme', String(data.autoTheme));
+      } else if (data.autoTheme === true) {
+        localStorage.setItem('autoTheme', 'true');
+      }
     }
     if (data.theme) {
       localStorage.setItem('theme', data.theme);
@@ -61,7 +68,8 @@ async function syncSettingsFromDb(): Promise<void> {
 }
 
 function applyActiveTheme(): void {
-  const autoTheme = localStorage.getItem('autoTheme') === 'true';
+  const autoThemeSetting = localStorage.getItem('autoTheme');
+  const autoTheme = autoThemeSetting === null ? true : autoThemeSetting === 'true';
   if (autoTheme) {
     applyTheme(resolveAutoTheme());
     startAutoThemeWatcher();
