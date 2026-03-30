@@ -79,6 +79,9 @@ This document outlines a detailed plan for **new features**, **UI improvements**
 - **Sticky headers**
   - Keep section headers (e.g. “Orchestrators”, “Sessions”) or toolbar sticky while scrolling long lists so actions remain visible.
 
+- **Shared page container**
+  - Use the `PageShell` wrapper for workspace views so content uses consistent max-width/padding and reliably fills available space in the flex layout.
+
 ### 2.2 Navigation and information architecture
 
 - **NavBar workspace switcher**
