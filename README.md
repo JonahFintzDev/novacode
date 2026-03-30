@@ -29,21 +29,32 @@ Run [Cursor Agent](https://cursor.com) and [Claude Code](https://claude.ai/code)
 
 ---
 
+## Documentation
+
+- **[Current functionality](../functionality.md)** — canonical inventory of what is implemented today (API routes, WebSockets, UI, and known limitations). Prefer this over marketing copy when in doubt.
+- **[Feature ideas](../feature-ideas.md)** — consolidated backlog of possible improvements (not a commitment); merges themes from `app/FEATURES.md` and `app/docs/improvement-plan.md`.
+- **Repository root** [`README.md`](../README.md) — monorepo layout (`app/` + `web/`) and short status summary.
+
+---
+
 ## Features
 
 | | |
 |---|---|
+| **Home** | Session overview: busy and idle counts, recently active strip, optional compact list; jump to workspaces from there. |
 | **Workspaces** | Map any directory on your host to a named project. Group, color-code, tag, and archive. |
 | **Sessions** | Start a Cursor Agent or Claude Code session per workspace. Streaming chat over WebSocket, image attachments, tags, archive. |
 | **Terminal** | Full PTY-backed terminal output via `node-pty` and xterm.js. |
+| **Orchestrators** | Multi-step task plans: decompose a goal into subtasks, run each step in its own session. Deleting an orchestrator removes its step sessions too. |
 | **Automations** | Schedule recurring agent prompts per workspace (cron-style intervals). |
 | **Git** | Per-workspace Git status, diffs, and multi-repo discovery — right in the UI. |
 | **File browser** | Browse and read/write files inside a workspace without leaving the app. |
 | **Workspace rules** | Markdown rule files injected into every agent prompt for that workspace. |
 | **Role templates** | Reusable instruction snippets for bootstrapping new rule files. |
-| **API tokens** | Generate static tokens for programmatic or CI/CD access. |
+| **REST API** | JSON API under `/api` with JWT bearer auth only (no separate API-token or API-key table today; see root `feature-ideas.md` for possible future programmatic keys). |
 | **Web Push** | Browser notifications when sessions produce output; VAPID keys are created automatically in the config volume. |
 | **Health endpoint** | `GET /api/health` — unauthenticated, ready for Docker `HEALTHCHECK` and uptime monitors. |
+| **MCP connectivity check** | In **Settings → MCP**, **Test connectivity** dry-runs each registered MCP server (stdio spawn, HTTP GET) on the host before agents use them. |
 
 ---
 
@@ -232,7 +243,7 @@ cd api && npx prisma migrate dev --name your_migration_name
 
 ## Project structure
 
-This README is the **application** package. In the full repository, these paths sit under `app/`.
+This README is the **application** package. The full repository also includes **`web/`** (Astro + Starlight marketing and docs). Paths below are under `app/`.
 
 ```
 app/

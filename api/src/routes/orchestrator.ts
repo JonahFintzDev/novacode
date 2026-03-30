@@ -6,26 +6,38 @@ import { db, normalizeTagStringList } from '../classes/database';
 import { createSessionWithAgent } from '../classes/sessionService';
 import { dispatchPrompt, dispatchPromptAndWait } from '../classes/chatEngine';
 import { jwtPreHandler } from '../classes/auth';
+import {
+  appendHandoff,
+  buildStepPrompt,
+  collectStepSessionIdsFromSubtasksJson,
+  mergeSubtasksJsonPatch,
+  parseSubtasksPayloadString,
+  serializeSubtasksPayload,
+  summarizeStepHandoff
+} from '../classes/orchestratorPayload';
+import { deleteSessionImages } from './images';
+import { broadcastWorkspaceSessionsRefresh } from './ws';
 
 // types
-import type { SubTask, ChatMessage } from '../@types/index';
+import type { ChatMessage, OrchestratorSubtasksPayload, SubTask } from '../@types/index';
 
 const DECOMPOSE_INSTRUCTION = `You are a task planner. The user will describe a high-level goal or ask to modify an existing task list.
 
 Critical: Each subtask runs in a separate session with no memory of previous steps. So:
-- Do NOT create meta-steps like "Plan the approach", "Decide on architecture", "Figure out the design", or "Outline the steps". Those are useless because the next step has no context.
+- Do NOT create meta-steps like "Plan the approach", "Decide on architecture", "Figure out the design", or "Outline the steps". Those are useless unless you capture the same information in "sharedContext" (see below).
 - Every step must be a concrete, executable task that an AI coding agent can do in isolation. The "prompt" for each step must contain everything the agent needs (what to build, where, and any constraints).
 - Prefer steps that produce tangible outputs: code, tests, config files, docs. Good: "Add a login form component at src/auth/LoginForm.tsx with email and password fields and a submit handler." Bad: "Plan the login flow."
 
 Keep the list short: only tasks directly related to the user's goal.
 
-You must respond with a single JSON object (no markdown, no code fence) with exactly one key: "subtasks".
-The value of "subtasks" must be an array of objects. Each object must have:
-- "name" (string): short title for the step
-- "prompt" (string): the full, self-contained instruction for the AI agent (include file paths, requirements, and context so the step works alone)
-- "category" (string or null): optional category label, e.g. "setup", "implementation", "tests"
+You must respond with a single JSON object (no markdown, no code fence) with exactly these keys:
+- "sharedContext" (string): Consolidated decisions, constraints, important file paths, and anything every later step must know. This is prepended to every step's prompt. Use empty string only if there is truly nothing global to share.
+- "subtasks" (array): Each element must have:
+  - "name" (string): short title for the step
+  - "prompt" (string): the full, self-contained instruction for the AI agent (include file paths, requirements, and context so the step works alone)
+  - "category" (string or null): optional category label, e.g. "setup", "implementation", "tests"
 
-If the user is refining an existing list, use their request to update the list (add, remove, merge, or reorder steps).
+If the user is refining an existing list, use their request to update sharedContext and subtasks (add, remove, merge, or reorder steps).
 Output only the JSON object, nothing else.`;
 
 /** Extract thinking text from a single stream-json line; returns null if not a thinking event (e.g. tool_call). */
@@ -75,6 +87,7 @@ function extractAssistantTextFromEvents(events: string[] | undefined): string {
 
 /** Expected schema description for debugging (shown when decomposition fails). */
 export const DECOMPOSE_EXPECTED_SCHEMA = `{
+  "sharedContext": "string",
   "subtasks": [
     { "name": "string", "prompt": "string", "category": "string | null" },
     ...
@@ -82,11 +95,11 @@ export const DECOMPOSE_EXPECTED_SCHEMA = `{
 }
 No markdown code fence; output only this JSON.`;
 
-function tryParseJson(str: string): { subtasks?: unknown } | null {
+function tryParseJson(str: string): Record<string, unknown> | null {
   try {
-    const parsed = JSON.parse(str);
+    const parsed = JSON.parse(str) as unknown;
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
-      return parsed as { subtasks?: unknown };
+      return parsed as Record<string, unknown>;
     if (typeof parsed === 'string') return tryParseJson(parsed);
     return null;
   } catch {
@@ -94,30 +107,12 @@ function tryParseJson(str: string): { subtasks?: unknown } | null {
   }
 }
 
-function parseSubtasksFromLlmResponse(raw: string): SubTask[] | null {
-  const trimmed = raw.trim();
-  // If the model added preamble (e.g. "Here is the plan:"), only look at the part starting with {
-  let working = trimmed.includes('{') ? trimmed.slice(trimmed.indexOf('{')) : trimmed;
-  let jsonStr = working;
-  const codeBlock = /^```(?:json)?\s*([\s\S]*?)```\s*$/m.exec(working);
-  if (codeBlock) jsonStr = codeBlock[1].trim();
-
-  let parsed = tryParseJson(jsonStr);
-  // If the model returned an escaped JSON string (e.g. "{\"subtasks\": [...]}"), parse again
-  if (!parsed && jsonStr.startsWith('"') && jsonStr.endsWith('"')) {
-    try {
-      const unescaped = JSON.parse(jsonStr) as string;
-      if (typeof unescaped === 'string') parsed = tryParseJson(unescaped);
-    } catch {
-      // ignore
-    }
-  }
-
-  if (!parsed || !Array.isArray(parsed.subtasks)) return null;
+function parseSubtasksArray(arr: unknown): SubTask[] | null {
+  if (!Array.isArray(arr)) return null;
   try {
-    const arr = parsed.subtasks as Array<{ name?: unknown; prompt?: unknown; category?: unknown }>;
+    const raw = arr as Array<{ name?: unknown; prompt?: unknown; category?: unknown }>;
     const result: SubTask[] = [];
-    for (const item of arr) {
+    for (const item of raw) {
       if (item == null || typeof item !== 'object') continue;
       const name = typeof item.name === 'string' ? item.name : String(item.name ?? '');
       const prompt = typeof item.prompt === 'string' ? item.prompt : String(item.prompt ?? '');
@@ -133,6 +128,32 @@ function parseSubtasksFromLlmResponse(raw: string): SubTask[] | null {
   } catch {
     return null;
   }
+}
+
+/** Parse planner JSON: sharedContext + subtasks (legacy: only subtasks array in object). */
+function parsePlanFromLlmResponse(raw: string): { sharedContext: string; subtasks: SubTask[] } | null {
+  const trimmed = raw.trim();
+  let working = trimmed.includes('{') ? trimmed.slice(trimmed.indexOf('{')) : trimmed;
+  let jsonStr = working;
+  const codeBlock = /^```(?:json)?\s*([\s\S]*?)```\s*$/m.exec(working);
+  if (codeBlock) jsonStr = codeBlock[1].trim();
+
+  let parsed = tryParseJson(jsonStr);
+  if (!parsed && jsonStr.startsWith('"') && jsonStr.endsWith('"')) {
+    try {
+      const unescaped = JSON.parse(jsonStr) as string;
+      if (typeof unescaped === 'string') parsed = tryParseJson(unescaped);
+    } catch {
+      // ignore
+    }
+  }
+
+  if (!parsed) return null;
+  const subtasks = parseSubtasksArray(parsed.subtasks);
+  if (!subtasks) return null;
+  const sharedContext =
+    typeof parsed.sharedContext === 'string' ? parsed.sharedContext : '';
+  return { sharedContext, subtasks };
 }
 
 export async function orchestratorRoutes(fastify: FastifyInstance): Promise<void> {
@@ -206,15 +227,22 @@ export async function orchestratorRoutes(fastify: FastifyInstance): Promise<void
         name?: string;
         subtasksJson?: string | null;
         tags?: string | null;
+        archived?: boolean;
       };
       const orchestrator = await db.getOrchestrator(orchestratorId);
       if (!orchestrator || orchestrator.workspaceId !== workspaceId) {
         return reply.status(404).send({ error: 'Orchestrator not found' });
       }
+      const mergedSubtasks =
+        'subtasksJson' in body
+          ? mergeSubtasksJsonPatch(body.subtasksJson ?? null, orchestrator.subtasksJson)
+          : undefined;
+
       const updated = await db.updateOrchestrator(orchestratorId, {
         name: body.name ?? orchestrator.name,
-        subtasksJson: 'subtasksJson' in body ? (body.subtasksJson ?? null) : undefined,
-        ...('tags' in (request.body as object) && { tags: body.tags ?? null })
+        ...(mergedSubtasks !== undefined && { subtasksJson: mergedSubtasks }),
+        ...('tags' in (request.body as object) && { tags: body.tags ?? null }),
+        ...(typeof body.archived === 'boolean' ? { archived: body.archived } : {})
       });
       return reply.send(updated ?? orchestrator);
     }
@@ -232,6 +260,12 @@ export async function orchestratorRoutes(fastify: FastifyInstance): Promise<void
       const orchestrator = await db.getOrchestrator(orchestratorId);
       if (!orchestrator || orchestrator.workspaceId !== workspaceId) {
         return reply.status(404).send({ error: 'Orchestrator not found' });
+      }
+      const stepSessionIds = collectStepSessionIdsFromSubtasksJson(orchestrator.subtasksJson);
+      if (stepSessionIds.length > 0) {
+        await db.deleteManySessions(stepSessionIds, workspaceId);
+        await Promise.all(stepSessionIds.map((id) => deleteSessionImages(id)));
+        broadcastWorkspaceSessionsRefresh(workspaceId);
       }
       await db.deleteOrchestrator(orchestratorId);
       return reply.status(204).send();
@@ -264,17 +298,14 @@ export async function orchestratorRoutes(fastify: FastifyInstance): Promise<void
         return reply.status(404).send({ error: 'Workspace not found' });
       }
 
-      let currentList: SubTask[] = [];
-      try {
-        if (orchestrator.subtasksJson?.trim()) {
-          currentList = JSON.parse(orchestrator.subtasksJson) as SubTask[];
-        }
-      } catch {
-        // ignore
-      }
+      let currentPayload = parseSubtasksPayloadString(orchestrator.subtasksJson);
+      const currentList = currentPayload?.subtasks ?? [];
       const currentListStr =
-        currentList.length > 0
-          ? `Current task list (JSON): ${JSON.stringify(currentList)}. User request: `
+        currentList.length > 0 || (currentPayload?.sharedContext?.trim() ?? '')
+          ? `Current plan (JSON): ${JSON.stringify({
+              sharedContext: currentPayload?.sharedContext ?? '',
+              subtasks: currentList
+            })}. User request: `
           : '';
 
       const promptText = `${DECOMPOSE_INSTRUCTION}\n\nUser goal: ${currentListStr}${userMessage.trim()}`;
@@ -322,13 +353,13 @@ export async function orchestratorRoutes(fastify: FastifyInstance): Promise<void
         onDone(messages: ChatMessage[]) {
           const lastAssistant = messages.filter((m) => m.role === 'assistant').pop();
           const rawText = extractAssistantTextFromEvents(lastAssistant?.events);
-          const subtasks = parseSubtasksFromLlmResponse(rawText);
+          const plan = parsePlanFromLlmResponse(rawText);
 
-          if (!subtasks) {
+          if (!plan) {
             sendEvent({
               type: 'error',
               error:
-                'Response was not valid JSON with a "subtasks" array. Previous list unchanged.',
+                'Response was not valid JSON with "sharedContext" and "subtasks". Previous list unchanged.',
               lastAssistantContent: rawText || undefined,
               expectedSchema: DECOMPOSE_EXPECTED_SCHEMA
             });
@@ -349,13 +380,19 @@ export async function orchestratorRoutes(fastify: FastifyInstance): Promise<void
           });
           orchestratorMessages.push({
             role: 'assistant',
-            content: `Generated ${subtasks.length} task(s).`,
+            content: `Generated ${plan.subtasks.length} task(s) with shared context.`,
             createdAt: new Date().toISOString()
+          });
+
+          const toSave = serializeSubtasksPayload({
+            sharedContext: plan.sharedContext,
+            handoffLog: '',
+            subtasks: plan.subtasks
           });
 
           db.updateOrchestrator(orchestratorId, {
             messageJson: JSON.stringify(orchestratorMessages),
-            subtasksJson: JSON.stringify(subtasks)
+            subtasksJson: toSave
           })
             .then(async (updated) => {
               const final = updated ?? (await db.getOrchestrator(orchestratorId));
@@ -391,9 +428,10 @@ export async function orchestratorRoutes(fastify: FastifyInstance): Promise<void
   async function runOrchestratorInBackground(
     workspaceId: string,
     orchestratorId: string,
-    subtasks: SubTask[],
+    payload: OrchestratorSubtasksPayload,
     startIndex: number
   ): Promise<void> {
+    const subtasks = payload.subtasks;
     const total = subtasks.length;
 
     const orchestrator = await db.getOrchestrator(orchestratorId);
@@ -440,7 +478,7 @@ export async function orchestratorRoutes(fastify: FastifyInstance): Promise<void
             runStatus: 'failed',
             runCurrentStep: globalIndex,
             runTotalSteps: total,
-            subtasksJson: JSON.stringify(subtasks)
+            subtasksJson: serializeSubtasksPayload(payload)
           });
           return;
         }
@@ -449,7 +487,7 @@ export async function orchestratorRoutes(fastify: FastifyInstance): Promise<void
         // can later group sessions under their orchestrator.
         task.sessionId = createResult.session.id;
 
-        const stepPrompt = task.prompt;
+        const stepPrompt = buildStepPrompt(task, payload);
         const runResult = await dispatchPromptAndWait({
           sessionId: createResult.session.id,
           text: stepPrompt,
@@ -460,21 +498,30 @@ export async function orchestratorRoutes(fastify: FastifyInstance): Promise<void
             runStatus: 'failed',
             runCurrentStep: globalIndex,
             runTotalSteps: total,
-            subtasksJson: JSON.stringify(subtasks)
+            subtasksJson: serializeSubtasksPayload(payload)
           });
           return;
         }
+
+        const snippet = summarizeStepHandoff(runResult.messages);
+        payload.handoffLog = appendHandoff(
+          payload.handoffLog,
+          globalIndex + 1,
+          task.name,
+          snippet
+        );
+
         await db.updateOrchestrator(orchestratorId, {
           runCurrentStep: globalIndex + 1,
           runTotalSteps: total,
-          subtasksJson: JSON.stringify(subtasks)
+          subtasksJson: serializeSubtasksPayload(payload)
         });
       }
       await db.updateOrchestrator(orchestratorId, {
         runStatus: 'completed',
         runCurrentStep: total,
         runTotalSteps: total,
-        subtasksJson: JSON.stringify(subtasks)
+        subtasksJson: serializeSubtasksPayload(payload)
       });
     } catch (error) {
       console.error('error while running orchestrator', error);
@@ -484,7 +531,7 @@ export async function orchestratorRoutes(fastify: FastifyInstance): Promise<void
         runStatus: 'failed',
         runCurrentStep: step,
         runTotalSteps: total,
-        subtasksJson: JSON.stringify(subtasks)
+        subtasksJson: serializeSubtasksPayload(payload)
       });
     }
   }
@@ -510,36 +557,34 @@ export async function orchestratorRoutes(fastify: FastifyInstance): Promise<void
         return reply.status(409).send({ error: 'Run already in progress' });
       }
 
-      let subtasks: SubTask[];
-      try {
-        const raw = orchestrator.subtasksJson;
-        if (!raw || !raw.trim()) {
-          return reply.status(400).send({ error: 'No subtasks defined. Generate tasks first.' });
-        }
-        subtasks = JSON.parse(raw) as SubTask[];
-        if (!Array.isArray(subtasks) || subtasks.length === 0) {
-          return reply.status(400).send({ error: 'Subtask list is empty.' });
-        }
-      } catch {
-        return reply.status(400).send({ error: 'Invalid subtasksJson' });
+      const payload = parseSubtasksPayloadString(orchestrator.subtasksJson);
+      if (!payload?.subtasks.length) {
+        return reply.status(400).send({
+          error: orchestrator.subtasksJson?.trim()
+            ? 'Invalid subtasksJson'
+            : 'No subtasks defined. Generate tasks first.'
+        });
       }
 
-      const toRun = subtasks.slice(startIndex);
+      const toRun = payload.subtasks.slice(startIndex);
       if (toRun.length === 0) {
         return reply.status(400).send({ error: 'No steps to run from startIndex.' });
+      }
+
+      if (startIndex === 0) {
+        payload.handoffLog = '';
       }
 
       const runStartedAt = new Date().toISOString();
       await db.updateOrchestrator(orchestratorId, {
         runStatus: 'running',
         runCurrentStep: startIndex,
-        runTotalSteps: subtasks.length,
-        runStartedAt
+        runTotalSteps: payload.subtasks.length,
+        runStartedAt,
+        subtasksJson: serializeSubtasksPayload(payload)
       });
 
-      // Run in background using the full subtasks list so we can
-      // persist session mappings back onto each subtask.
-      runOrchestratorInBackground(workspaceId, orchestratorId, subtasks, startIndex).catch(() => {
+      runOrchestratorInBackground(workspaceId, orchestratorId, payload, startIndex).catch(() => {
         // state already updated in runOrchestratorInBackground
       });
 

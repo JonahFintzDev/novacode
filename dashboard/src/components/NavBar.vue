@@ -39,7 +39,7 @@ const handleLogout = (): void => {
 
         <div class="hidden md:flex items-center gap-0.5">
           <RouterLink
-            to="/"
+            to="/workspaces"
             class="main-nav-link px-3 py-2 text-sm text-text-muted hover:text-text-primary hover:bg-fg/[0.06] rounded-md border-b-2 border-transparent transition-all duration-200"
             @click="bMenuOpen = false"
           >
@@ -134,7 +134,7 @@ const handleLogout = (): void => {
         class="md:hidden border-t border-fg/[0.06] bg-bg px-4 py-2 flex flex-col gap-1"
       >
         <RouterLink
-          to="/"
+          to="/workspaces"
           class="px-3 py-3 text-sm text-text-primary hover:text-text-primary hover:bg-fg/[0.06] rounded-md block transition-colors"
           @click="bMenuOpen = false"
         >

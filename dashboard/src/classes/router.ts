@@ -24,6 +24,11 @@ const router = createRouter({
     {
       path: '/',
       name: 'home',
+      component: (): Promise<typeof import('@/views/HomeView.vue')> => import('@/views/HomeView.vue')
+    },
+    {
+      path: '/workspaces',
+      name: 'workspaces',
       component: (): Promise<typeof import('@/views/workspace/ListView.vue')> =>
         import('@/views/workspace/ListView.vue')
     },

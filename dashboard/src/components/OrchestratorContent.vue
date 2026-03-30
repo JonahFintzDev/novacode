@@ -205,7 +205,7 @@ watch(
     <ConfirmModal
       v-model="showDeleteModal"
       title="Delete orchestrator"
-      :description="`Delete '${orchestrator?.name}'? The task list will be lost.`"
+      :description="`Delete '${orchestrator?.name}'? The task list and any step sessions from this plan will be permanently removed.`"
       confirm-label="Delete"
       :loading="isDeleting"
       @confirm="deleteOrchestrator"

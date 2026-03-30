@@ -17,6 +17,7 @@ import {
   writeMcpClients
 } from '../classes/config';
 import type { McpClientServerConfig } from '../classes/config';
+import { checkMcpClients } from '../classes/mcpConnectivityCheck';
 import { getCursorModels } from '../classes/cursorModels';
 import { readSshKeyMaterial } from '../classes/sshKey';
 import { cursorAuthenticated } from './agentAuth';
@@ -270,6 +271,35 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
       const { servers } = request.body as { servers: Record<string, McpClientServerConfig> };
       writeMcpClients(config.configDir, servers);
       return { servers };
+    }
+  );
+
+  const McpCheckResultSchema = Type.Object({
+    ok: Type.Boolean(),
+    kind: Type.Union([Type.Literal('stdio'), Type.Literal('http')]),
+    error: Type.Optional(Type.String()),
+    detail: Type.Optional(Type.String())
+  });
+
+  fastifyInstance.post(
+    '/api/settings/mcp-clients/check',
+    {
+      preHandler: jwtPreHandler,
+      schema: {
+        body: Type.Object({
+          servers: Type.Optional(Type.Record(Type.String(), McpClientServerSchema))
+        }),
+        response: {
+          200: Type.Object({
+            results: Type.Record(Type.String(), McpCheckResultSchema)
+          })
+        }
+      }
+    },
+    async (request) => {
+      const body = request.body as { servers?: Record<string, McpClientServerConfig> };
+      const results = await checkMcpClients(config.configDir, body.servers);
+      return { results };
     }
   );
 }

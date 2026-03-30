@@ -12,6 +12,9 @@ import { useWorkspacesStore } from '@/stores/workspaces';
 // types
 import type { Session, Orchestrator } from '@/@types/index';
 
+// utils
+import { subtasksFromStoredJson } from '@/utils/orchestratorPayload';
+
 // -------------------------------------------------- Props --------------------------------------------------
 const props = defineProps<{
   workspaceId: string;
@@ -38,13 +41,55 @@ const bOrchestratorsLoading = ref<boolean>(false);
 
 type SidebarItem =
   | { kind: 'session'; session: Session }
-  | { kind: 'orchestrator'; orchestrator: Orchestrator };
+  | { kind: 'orchestrator'; orchestrator: Orchestrator; nestedSessions: Session[] };
+
+/** Session ids that appear as orchestrator step runs (nested under orchestrator, not top-level). */
+const sessionsAttachedToOrchestrators = computed(() => {
+  const ids = new Set<string>();
+  const sessionsById = new Map(workspacesStore.activeSessions.map((s) => [s.id, s]));
+  for (const orch of orchestrators.value) {
+    const tasks = subtasksFromStoredJson(orch.subtasksJson);
+    for (const task of tasks) {
+      const sid = task.sessionId ?? null;
+      if (!sid || !sessionsById.has(sid)) continue;
+      ids.add(sid);
+    }
+  }
+  return ids;
+});
+
+function orderedNestedSessions(orch: Orchestrator): Session[] {
+  const tasks = subtasksFromStoredJson(orch.subtasksJson);
+  const sessionsById = new Map(workspacesStore.activeSessions.map((s) => [s.id, s]));
+  const out: Session[] = [];
+  const seen = new Set<string>();
+  for (const task of tasks) {
+    const sid = task.sessionId ?? null;
+    if (!sid || seen.has(sid)) continue;
+    const s = sessionsById.get(sid);
+    if (s) {
+      seen.add(sid);
+      out.push(s);
+    }
+  }
+  return out;
+}
 
 const items = computed<SidebarItem[]>(() => {
-  const list: SidebarItem[] = [
-    ...workspacesStore.activeSessions.map((s) => ({ kind: 'session' as const, session: s })),
-    ...orchestrators.value.map((o) => ({ kind: 'orchestrator' as const, orchestrator: o }))
-  ];
+  const excluded = sessionsAttachedToOrchestrators.value;
+  const sessionItems: SidebarItem[] = workspacesStore.activeSessions
+    .filter((s) => !excluded.has(s.id))
+    .map((s) => ({ kind: 'session' as const, session: s }));
+
+  const orchestratorItems: SidebarItem[] = orchestrators.value
+    .filter((o) => !o.archived)
+    .map((o) => ({
+      kind: 'orchestrator' as const,
+      orchestrator: o,
+      nestedSessions: orderedNestedSessions(o)
+    }));
+
+  const list: SidebarItem[] = [...sessionItems, ...orchestratorItems];
   return list.sort((a, b) => {
     const aUpdated = a.kind === 'session' ? a.session.updatedAt : a.orchestrator.updatedAt;
     const bUpdated = b.kind === 'session' ? b.session.updatedAt : b.orchestrator.updatedAt;
@@ -209,117 +254,159 @@ watch(
         <li
           v-for="item in items"
           :key="item.kind === 'session' ? item.session.id : item.orchestrator.id"
+          class="space-y-0.5"
         >
-          <button
-            type="button"
-            class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left text-sm transition-colors border"
-            :class="[
-              item.kind === 'session' && activeKind === 'session' && activeId === item.session.id
-                ? 'bg-primary/15 border-primary/40 text-text-primary'
-                : '',
-              item.kind === 'orchestrator' &&
-              activeKind === 'orchestrator' &&
-              activeId === item.orchestrator.id
-                ? 'bg-primary/15 border-primary/40 text-text-primary'
-                : '',
-              item.kind === 'session' && !(activeKind === 'session' && activeId === item.session.id)
-                ? 'border-transparent text-text-muted hover:bg-fg/[0.06] hover:text-text-primary'
-                : '',
-              item.kind === 'orchestrator' &&
-              !(activeKind === 'orchestrator' && activeId === item.orchestrator.id)
-                ? 'border-transparent text-text-muted hover:bg-fg/[0.06] hover:text-text-primary'
-                : ''
-            ]"
-            @click="open(item)"
-          >
-            <span
-              class="material-symbols-outlined select-none shrink-0"
-              :class="
-                item.kind === 'session'
-                  ? item.session.busy
-                    ? 'text-primary'
-                    : 'text-text-muted'
-                  : 'text-text-muted'
-              "
-              style="font-size: 20px"
+          <template v-if="item.kind === 'session'">
+            <button
+              type="button"
+              class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left text-sm transition-colors border"
+              :class="[
+                activeKind === 'session' && activeId === item.session.id
+                  ? 'bg-primary/15 border-primary/40 text-text-primary'
+                  : 'border-transparent text-text-muted hover:bg-fg/[0.06] hover:text-text-primary'
+              ]"
+              @click="open(item)"
             >
-              {{ item.kind === 'session' ? 'forum' : 'account_tree' }}
-            </span>
+              <span
+                class="material-symbols-outlined select-none shrink-0"
+                :class="item.session.busy ? 'text-primary' : 'text-text-muted'"
+                style="font-size: 20px"
+              >
+                forum
+              </span>
 
-            <div class="flex-1 min-w-0 flex flex-col gap-0.5">
-              <div class="flex items-center gap-1 min-w-0">
-                <span class="truncate">
-                  {{
-                    item.kind === 'session'
-                      ? item.session.name || 'Untitled session'
-                      : item.orchestrator.name || 'Untitled orchestrator'
-                  }}
-                </span>
-              </div>
-              <div class="flex items-center gap-1 text-[11px] text-text-muted">
-                <span
-                  class="px-1.5 py-0.5 rounded border inline-flex items-center gap-1"
-                  :class="
-                    (item.kind === 'session'
-                      ? item.session.agentType
-                      : item.orchestrator.agentType) === 'claude'
-                      ? 'bg-orange-500/15 text-orange-400 border-orange-500/20'
-                      : 'bg-violet-500/15 text-violet-400 border-violet-500/20'
-                  "
-                >
-                  <span class="material-symbols-outlined select-none" style="font-size: 11px"
-                    >smart_toy</span
-                  >
-                  {{
-                    (item.kind === 'session'
-                      ? item.session.agentType
-                      : item.orchestrator.agentType) === 'claude'
-                      ? 'Claude'
-                      : 'Cursor'
-                  }}
-                </span>
-                <template v-if="item.kind === 'session' && item.session.tags?.length">
-                  <span class="mx-1 text-fg/40 shrink-0">•</span>
-                  <span class="inline-flex flex-wrap items-center gap-1 min-w-0">
-                    <span
-                      v-for="tag in item.session.tags"
-                      :key="tag"
-                      class="px-1.5 py-0.5 rounded-full border text-[11px]"
-                      :class="categoryColorClass(tag)"
-                    >
-                      {{ tag }}
-                    </span>
+              <div class="flex-1 min-w-0 flex flex-col gap-0.5">
+                <div class="flex items-center gap-1 min-w-0">
+                  <span class="truncate">
+                    {{ item.session.name || 'Untitled session' }}
                   </span>
-                </template>
-                <span class="ml-auto">
-                  {{
-                    relativeTime(
-                      item.kind === 'session' ? item.session.updatedAt : item.orchestrator.updatedAt
-                    )
-                  }}
-                </span>
+                </div>
+                <div class="flex items-center gap-1 text-[11px] text-text-muted">
+                  <span
+                    class="px-1.5 py-0.5 rounded border inline-flex items-center gap-1"
+                    :class="
+                      item.session.agentType === 'claude'
+                        ? 'bg-orange-500/15 text-orange-400 border-orange-500/20'
+                        : 'bg-violet-500/15 text-violet-400 border-violet-500/20'
+                    "
+                  >
+                    <span class="material-symbols-outlined select-none" style="font-size: 11px"
+                      >smart_toy</span
+                    >
+                    {{ item.session.agentType === 'claude' ? 'Claude' : 'Cursor' }}
+                  </span>
+                  <template v-if="item.session.tags?.length">
+                    <span class="mx-1 text-fg/40 shrink-0">•</span>
+                    <span class="inline-flex flex-wrap items-center gap-1 min-w-0">
+                      <span
+                        v-for="tag in item.session.tags"
+                        :key="tag"
+                        class="px-1.5 py-0.5 rounded-full border text-[11px]"
+                        :class="categoryColorClass(tag)"
+                      >
+                        {{ tag }}
+                      </span>
+                    </span>
+                  </template>
+                  <span class="ml-auto">
+                    {{ relativeTime(item.session.updatedAt) }}
+                  </span>
+                </div>
               </div>
-            </div>
 
-            <span
-              v-if="item.kind === 'session' && item.session.busy"
-              class="inline-flex items-center gap-1.5 text-[11px] text-primary shrink-0"
-            >
               <span
-                class="w-3 h-3 border-2 border-primary/40 border-t-primary rounded-full animate-spin"
-              />
-              Busy
-            </span>
-            <span
-              v-else-if="item.kind === 'orchestrator' && item.orchestrator.runStatus === 'running'"
-              class="inline-flex items-center gap-1.5 text-[11px] text-primary shrink-0"
-            >
-              <span
-                class="w-3 h-3 border-2 border-primary/40 border-t-primary rounded-full animate-spin"
-              />
-              Running
-            </span>
-          </button>
+                v-if="item.session.busy"
+                class="inline-flex items-center gap-1.5 text-[11px] text-primary shrink-0"
+              >
+                <span
+                  class="w-3 h-3 border-2 border-primary/40 border-t-primary rounded-full animate-spin"
+                />
+                Busy
+              </span>
+            </button>
+          </template>
+
+          <template v-else>
+            <div class="rounded-lg border border-border/60 bg-fg/[0.02] overflow-hidden">
+              <button
+                type="button"
+                class="w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-colors"
+                :class="[
+                  activeKind === 'orchestrator' && activeId === item.orchestrator.id
+                    ? 'bg-primary/15 text-text-primary'
+                    : 'text-text-muted hover:bg-fg/[0.06] hover:text-text-primary'
+                ]"
+                @click="open(item)"
+              >
+                <span class="material-symbols-outlined select-none shrink-0 text-text-muted" style="font-size: 20px"
+                  >account_tree</span
+                >
+
+                <div class="flex-1 min-w-0 flex flex-col gap-0.5">
+                  <div class="flex items-center gap-1 min-w-0">
+                    <span class="truncate">
+                      {{ item.orchestrator.name || 'Untitled orchestrator' }}
+                    </span>
+                  </div>
+                  <div class="flex items-center gap-1 text-[11px] text-text-muted">
+                    <span
+                      class="px-1.5 py-0.5 rounded border inline-flex items-center gap-1"
+                      :class="
+                        item.orchestrator.agentType === 'claude'
+                          ? 'bg-orange-500/15 text-orange-400 border-orange-500/20'
+                          : 'bg-violet-500/15 text-violet-400 border-violet-500/20'
+                      "
+                    >
+                      <span class="material-symbols-outlined select-none" style="font-size: 11px"
+                        >smart_toy</span
+                      >
+                      {{ item.orchestrator.agentType === 'claude' ? 'Claude' : 'Cursor' }}
+                    </span>
+                    <span class="ml-auto">
+                      {{ relativeTime(item.orchestrator.updatedAt) }}
+                    </span>
+                  </div>
+                </div>
+
+                <span
+                  v-if="item.orchestrator.runStatus === 'running'"
+                  class="inline-flex items-center gap-1.5 text-[11px] text-primary shrink-0"
+                >
+                  <span
+                    class="w-3 h-3 border-2 border-primary/40 border-t-primary rounded-full animate-spin"
+                  />
+                  Running
+                </span>
+              </button>
+
+              <ul
+                v-if="item.nestedSessions.length > 0"
+                class="border-t border-border/50 pl-4 ml-4 mr-2 mb-2 space-y-0.5 border-l border-border/40"
+              >
+                <li v-for="sub in item.nestedSessions" :key="sub.id">
+                  <button
+                    type="button"
+                    class="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-xs transition-colors"
+                    :class="[
+                      activeKind === 'session' && activeId === sub.id
+                        ? 'bg-primary/10 text-text-primary'
+                        : 'text-text-muted hover:bg-fg/[0.06] hover:text-text-primary'
+                    ]"
+                    @click.prevent.stop="open({ kind: 'session', session: sub })"
+                  >
+                    <span class="material-symbols-outlined shrink-0 text-fg/50" style="font-size: 16px"
+                      >subdirectory_arrow_right</span
+                    >
+                    <span class="truncate flex-1">{{ sub.name || 'Untitled session' }}</span>
+                    <span
+                      v-if="sub.busy"
+                      class="w-2.5 h-2.5 border border-primary/40 border-t-primary rounded-full animate-spin shrink-0"
+                    />
+                  </button>
+                </li>
+              </ul>
+            </div>
+          </template>
         </li>
       </ul>
     </div>

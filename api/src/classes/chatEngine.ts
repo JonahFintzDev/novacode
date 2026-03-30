@@ -1,12 +1,13 @@
 // node_modules
 import { spawn, type ChildProcess } from 'node:child_process';
 import { join } from 'node:path';
-import { readdir, readFile } from 'node:fs/promises';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import type { Dirent } from 'node:fs';
 
 // classes
 import { db } from './database';
 import { config } from './config';
+import { isWorkspaceRuleHiddenFromUi } from './workspaceRules';
 import { parseAgentStream } from './agentStreamParser';
 import { sendTaskDonePush } from './push';
 
@@ -123,7 +124,23 @@ async function buildWorkspaceRulesPrefix(workspacePath: string): Promise<string>
     return '';
   }
 
-  const ruleFiles = entries.filter((entry) => entry.isFile()).map((entry) => entry.name).sort();
+  const ruleFiles: string[] = [];
+  for (const entry of entries) {
+    if (entry.isDirectory()) continue;
+    let include = entry.isFile();
+    if (entry.isSymbolicLink()) {
+      try {
+        const st = await stat(join(rulesDir, entry.name));
+        include = st.isFile();
+      } catch {
+        include = false;
+      }
+    }
+    if (!include) continue;
+    if (isWorkspaceRuleHiddenFromUi(entry.name)) continue;
+    ruleFiles.push(entry.name);
+  }
+  ruleFiles.sort();
   if (ruleFiles.length === 0) return '';
 
   const sections: string[] = [];

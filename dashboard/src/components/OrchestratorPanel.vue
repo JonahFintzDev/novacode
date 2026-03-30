@@ -8,6 +8,12 @@ import { orchestratorApi } from '@/classes/api';
 // types
 import type { Orchestrator, SubTask } from '@/@types/index';
 
+// utils
+import {
+  parseOrchestratorSubtasksJson,
+  serializeOrchestratorSubtasksPayload
+} from '@/utils/orchestratorPayload';
+
 const props = defineProps<{
   workspaceId: string;
   orchestratorId: string;
@@ -67,15 +73,12 @@ const runProgress = computed(() => {
   return null;
 });
 
-const subtasks = computed<SubTask[]>(() => {
-  if (!props.orchestrator?.subtasksJson?.trim()) return [];
-  try {
-    const arr = JSON.parse(props.orchestrator.subtasksJson) as SubTask[];
-    return Array.isArray(arr) ? arr : [];
-  } catch {
-    return [];
-  }
-});
+const planPayload = computed(() => parseOrchestratorSubtasksJson(props.orchestrator?.subtasksJson));
+
+const subtasks = computed<SubTask[]>(() => planPayload.value?.subtasks ?? []);
+
+const sharedContextDisplay = computed(() => planPayload.value?.sharedContext?.trim() ?? '');
+const handoffLogDisplay = computed(() => planPayload.value?.handoffLog?.trim() ?? '');
 
 // Editable copy for inline edit; sync from orchestrator when orchestrator changes
 const editedSubtasks = ref<SubTask[]>([]);
@@ -86,12 +89,10 @@ watch(
       editedSubtasks.value = [];
       return;
     }
-    try {
-      const arr = JSON.parse(json) as SubTask[];
-      editedSubtasks.value = Array.isArray(arr) ? arr.map((t) => ({ ...t })) : [];
-    } catch {
-      editedSubtasks.value = [];
-    }
+    const payload = parseOrchestratorSubtasksJson(json);
+    editedSubtasks.value = payload?.subtasks?.length
+      ? payload.subtasks.map((t) => ({ ...t }))
+      : [];
   },
   { immediate: true }
 );
@@ -253,8 +254,14 @@ async function saveSubtasks() {
   if (!hasEdits.value || !props.orchestrator) return;
   isSavingSubtasks.value = true;
   try {
+    const prev = parseOrchestratorSubtasksJson(props.orchestrator.subtasksJson);
+    const nextPayload = {
+      sharedContext: prev?.sharedContext ?? '',
+      handoffLog: prev?.handoffLog ?? '',
+      subtasks: editedSubtasks.value
+    };
     const { data } = await orchestratorApi.update(props.workspaceId, props.orchestratorId, {
-      subtasksJson: JSON.stringify(editedSubtasks.value)
+      subtasksJson: serializeOrchestratorSubtasksPayload(nextPayload)
     });
     if (data) emit('update:orchestrator', data);
   } catch {
@@ -386,6 +393,40 @@ function removeTask(index: number) {
           ref="decomposeThinkingEl"
         >
           {{ decomposeThinking || (isDecomposing ? '…' : '') }}
+        </div>
+      </div>
+
+      <div
+        v-if="sharedContextDisplay"
+        class="rounded-xl border border-primary/25 bg-primary/5 overflow-hidden"
+      >
+        <div class="px-3 py-2 border-b border-fg/10">
+          <span class="text-sm font-medium text-text-primary">Shared plan context</span>
+          <p class="text-xs text-text-muted mt-0.5">
+            Prepended to every step so later sessions see the same decisions and constraints.
+          </p>
+        </div>
+        <div
+          class="px-3 py-2 text-sm text-text-muted max-h-40 overflow-y-auto whitespace-pre-wrap break-words"
+        >
+          {{ sharedContextDisplay }}
+        </div>
+      </div>
+
+      <div
+        v-if="handoffLogDisplay"
+        class="rounded-xl border border-fg/15 bg-fg/[0.04] overflow-hidden"
+      >
+        <div class="px-3 py-2 border-b border-fg/10">
+          <span class="text-sm font-medium text-text-primary">Completed steps — handoff</span>
+          <p class="text-xs text-text-muted mt-0.5">
+            Summaries from finished steps; appended to prompts for later steps in this run.
+          </p>
+        </div>
+        <div
+          class="px-3 py-2 text-sm text-text-muted max-h-48 overflow-y-auto whitespace-pre-wrap break-words font-mono text-xs"
+        >
+          {{ handoffLogDisplay }}
         </div>
       </div>
 

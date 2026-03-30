@@ -11,6 +11,13 @@ export interface SubTask {
   sessionId?: string | null;
 }
 
+/** Stored in `subtasksJson` as JSON object with `subtasks` array (legacy: raw array only). */
+export interface OrchestratorSubtasksPayload {
+  sharedContext: string;
+  handoffLog: string;
+  subtasks: SubTask[];
+}
+
 export interface RoleTemplate {
   id: string;
   name: string;
@@ -30,6 +37,8 @@ export interface Orchestrator {
   workspaceId: string;
   createdAt: string;
   updatedAt: string;
+  /** Omitted on older API responses; treat as false. */
+  archived?: boolean;
   runStatus?: string | null;
   runCurrentStep?: number | null;
   runTotalSteps?: number | null;
@@ -97,6 +106,14 @@ export interface McpClientServer {
   env?: Record<string, string>;
   url?: string;
   headers?: Record<string, string>;
+}
+
+/** Result of Settings → MCP “Test connectivity” dry-run */
+export interface McpConnectivityCheckResult {
+  ok: boolean;
+  kind: 'stdio' | 'http';
+  error?: string;
+  detail?: string;
 }
 
 export interface Automation {

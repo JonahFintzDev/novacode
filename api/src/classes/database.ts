@@ -432,7 +432,8 @@ export const db = {
         messageJson: '[]',
         subtasksJson: null,
         workspaceId: data.workspaceId,
-        createdAt
+        createdAt,
+        archived: false
       }
     });
   },
@@ -444,6 +445,7 @@ export const db = {
       messageJson?: string;
       subtasksJson?: string | null;
       tags?: string | null;
+      archived?: boolean;
       runStatus?: string | null;
       runCurrentStep?: number | null;
       runTotalSteps?: number | null;
@@ -457,6 +459,7 @@ export const db = {
       messageJson: patch.messageJson ?? existing.messageJson,
       subtasksJson: 'subtasksJson' in patch ? patch.subtasksJson : existing.subtasksJson,
       tags: 'tags' in patch ? (patch.tags ?? null) : existing.tags,
+      archived: 'archived' in patch ? patch.archived! : existing.archived,
       updatedAt: new Date().toISOString(),
       ...('runStatus' in patch && { runStatus: patch.runStatus }),
       ...('runCurrentStep' in patch && { runCurrentStep: patch.runCurrentStep }),

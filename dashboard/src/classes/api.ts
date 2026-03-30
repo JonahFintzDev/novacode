@@ -10,6 +10,7 @@ import type {
   Workspace,
   AppSettings,
   McpClientServer,
+  McpConnectivityCheckResult,
   CreateWorkspacePayload,
   UpdateWorkspacePayload,
   Session,
@@ -138,6 +139,10 @@ interface McpClientsResponse {
   servers: Record<string, McpClientServer>;
 }
 
+interface McpClientsCheckResponse {
+  results: Record<string, McpConnectivityCheckResult>;
+}
+
 export const settingsApi = {
   get: (): ReturnType<typeof http.get<AppSettings>> => http.get<AppSettings>('/settings'),
   update: (payload: Partial<AppSettings>): ReturnType<typeof http.put<AppSettings>> =>
@@ -169,7 +174,13 @@ export const settingsApi = {
   saveMcpClients: (
     servers: Record<string, McpClientServer>
   ): ReturnType<typeof http.put<McpClientsResponse>> =>
-    http.put<McpClientsResponse>('/settings/mcp-clients', { servers })
+    http.put<McpClientsResponse>('/settings/mcp-clients', { servers }),
+
+  /** Dry-run: stdio spawn probe + HTTP GET; optional body validates unsaved servers */
+  checkMcpClients: (
+    servers?: Record<string, McpClientServer>
+  ): ReturnType<typeof http.post<McpClientsCheckResponse>> =>
+    http.post<McpClientsCheckResponse>('/settings/mcp-clients/check', servers ? { servers } : {})
 };
 
 // ---------------------------------- Push notifications ----------------------------------
@@ -411,6 +422,7 @@ export const orchestratorApi = {
       name?: string;
       tags?: string | null;
       subtasksJson?: string | null;
+      archived?: boolean;
     }
   ): ReturnType<typeof http.patch<Orchestrator>> =>
     http.patch<Orchestrator>(`/workspaces/${workspaceId}/orchestrators/${orchestratorId}`, patch),

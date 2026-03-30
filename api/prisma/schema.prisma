@@ -99,6 +99,7 @@ model Orchestrator {
   workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   createdAt       String    @map("created_at")
   updatedAt       String    @default(dbgenerated("CURRENT_TIMESTAMP")) @map("updated_at")
+  archived        Boolean   @default(false)
   runStatus       String?   @map("run_status")
   runCurrentStep  Int?      @map("run_current_step")
   runTotalSteps   Int?      @map("run_total_steps")

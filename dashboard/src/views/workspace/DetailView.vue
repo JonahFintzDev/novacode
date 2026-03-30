@@ -144,7 +144,7 @@ onBeforeUnmount(() => {
   >
     <!-- Breadcrumb -->
     <div class="breadcrumps">
-      <RouterLink to="/">
+      <RouterLink :to="{ name: 'workspaces' }">
         <span class="material-symbols-outlined select-none">arrow_back</span>
         Workspaces
       </RouterLink>
@@ -248,7 +248,7 @@ onBeforeUnmount(() => {
     <div v-else key="notfound" class="flex flex-col items-center justify-center py-32 gap-4">
       <p class="text-destructive">Workspace not found.</p>
       <RouterLink
-        to="/"
+        :to="{ name: 'workspaces' }"
         class="text-sm text-primary hover:text-primary-hover underline transition-colors"
       >
         Back to workspaces

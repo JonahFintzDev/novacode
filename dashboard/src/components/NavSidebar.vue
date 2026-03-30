@@ -19,9 +19,14 @@ const workspacesStore = useWorkspacesStore();
 
 const navItems = [
   {
+    icon: 'home',
+    label: 'Home',
+    to: { name: 'home' }
+  },
+  {
     icon: 'folder',
     label: 'Workspaces',
-    to: { name: 'home' }
+    to: { name: 'workspaces' }
   },
   {
     icon: 'schedule',

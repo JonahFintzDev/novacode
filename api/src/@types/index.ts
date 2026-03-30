@@ -15,6 +15,13 @@ export interface SubTask {
    */
   sessionId?: string | null;
 }
+
+/** Stored in `subtasks_json` as JSON object with `subtasks` array (legacy: raw array only). */
+export interface OrchestratorSubtasksPayload {
+  sharedContext: string;
+  handoffLog: string;
+  subtasks: SubTask[];
+}
 export type SessionStatus = 'running' | 'stopped' | 'failed' | 'error';
 
 export interface WsClientMessage {

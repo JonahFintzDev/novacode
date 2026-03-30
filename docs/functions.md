@@ -2,6 +2,8 @@
 
 This document describes what the application **does today** (backend API, dashboard, and supporting services). It reflects the codebase as of the last review, not a roadmap.
 
+**Canonical detail:** prefer the repository root [`functionality.md`](../../functionality.md) for route names, WebSocket paths, and known limitations; update this file when you need a shorter in-tree summary.
+
 ---
 
 ## 1. Product overview
@@ -17,7 +19,7 @@ Optional features include **scheduled automations**, **role templates**, and **b
 - **First-run setup**: If no user exists, the app exposes a setup flow (`/api/auth/setup`) to create the initial account (username + password).
 - **Login**: Password-based login returns a **JWT** used for API and WebSocket connections.
 - **Account**: Password change, username change, and related account endpoints (see `auth` routes).
-- **API tokens**: Users can create **named API tokens** (hashed in the database) for programmatic access; tokens are used like bearer credentials where supported.
+- **REST auth**: Programmatic access uses the same **JWT** as the dashboard (`Authorization: Bearer`). There is **no** separate API-token table in the current schema (removed in migration `20260329120000_remove_api_tokens`).
 
 ---
 
@@ -103,7 +105,7 @@ Optional features include **scheduled automations**, **role templates**, and **b
 - **UI**: **Theme** (including **auto theme** and separate dark/light theme presets), **model selection** (e.g. auto vs specific Cursor models).
 - **Agent capabilities**: Endpoints report whether **Claude** CLI is available and **Cursor** is authenticated.
 - **Vibe (Mistral)**: Stored API key in `.vibe/.env` under config dir when configured.
-- **MCP client config**: External MCP servers (stdio or HTTP) for Cursor / Claude; persisted as `mcp-clients.json` and synced to `.cursor/mcp.json` and `mcpServers` in `.claude.json` (read/write via settings API).
+- **MCP client config**: External MCP servers (stdio or HTTP) for Cursor / Claude; persisted as `mcp-clients.json` and synced to `.cursor/mcp.json` and `mcpServers` in `.claude.json` (read/write via settings API). **`POST /api/settings/mcp-clients/check`** runs a dry-run (stdio spawn probe, HTTP GET) and returns per-server results.
 - **Claude token**: Optional stored token for Claude authentication.
 - **Cursor login**: Flows that spawn a PTY for `cursor-agent` login and persist auth under `config`.
 

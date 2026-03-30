@@ -16,7 +16,10 @@ import { sessionsApi, orchestratorApi, settingsApi } from '@/classes/api';
 import { useWorkspacesStore } from '@/stores/workspaces';
 
 // types
-import type { Session, Orchestrator, SubTask, AgentType, Workspace } from '@/@types/index';
+import type { Session, Orchestrator, AgentType, Workspace } from '@/@types/index';
+
+// utils
+import { subtasksFromStoredJson } from '@/utils/orchestratorPayload';
 
 // -------------------------------------------------- Const --------------------------------------------------
 const AGENT_TYPE_TEXT = {
@@ -42,6 +45,8 @@ const archivedSessions = computed<Session[]>(() => store.archivedSessions);
 const sessionsLoading = computed<boolean>(() => store.bSessionsLoading);
 const orchestrators = ref<Orchestrator[]>([]);
 const orchestratorsLoading = ref(false);
+/** After first successful fetch; avoids showing step sessions at top level before orchestrator data exists. */
+const orchestratorsInitialFetched = ref(false);
 const showNewSessionModal = ref(false);
 const isSubmittingSession = ref(false);
 const sessionToDelete = ref<Session | null>(null);
@@ -59,12 +64,10 @@ const showArchived = ref(false);
 
 // multiselect
 const selectedIds = ref<Set<string>>(new Set());
-const isBulkDeleting = ref(false);
 const isBulkArchiving = ref(false);
-const showBulkDeleteConfirm = ref(false);
+const showBulkDeleteCombined = ref(false);
+const isBulkDeletingCombined = ref(false);
 const orchestratorSelectedIds = ref<Set<string>>(new Set());
-const isBulkDeletingOrchestrators = ref(false);
-const showBulkDeleteOrchestrators = ref(false);
 
 watch(viewMode, (v) => localStorage.setItem('sessionsViewMode', v));
 watch(orchestratorsViewMode, (v) => localStorage.setItem('orchestratorsViewMode', v));
@@ -124,12 +127,8 @@ const orchestratorSessionsByOrchestrator = computed(() => {
 
   for (const orch of orchestrators.value) {
     if (!orch.subtasksJson || !orch.subtasksJson.trim()) continue;
-    let tasks: SubTask[];
-    try {
-      tasks = JSON.parse(orch.subtasksJson) as SubTask[];
-    } catch {
-      continue;
-    }
+    const tasks = subtasksFromStoredJson(orch.subtasksJson);
+    if (tasks.length === 0) continue;
     const seen = new Set<string>();
     const groupSessions: Session[] = [];
     for (const task of tasks) {
@@ -166,8 +165,36 @@ function orchestratorSessionsFor(orchestratorId: string): Session[] {
   return group?.sessions ?? [];
 }
 
+/** Step sessions under an orchestrator, in subtask order (for nested list UI). */
+function orderedNestedSessions(orch: Orchestrator): Session[] {
+  const tasks = subtasksFromStoredJson(orch.subtasksJson);
+  const sessionsById = new Map(sessions.value.map((s) => [s.id, s]));
+  const out: Session[] = [];
+  const seen = new Set<string>();
+  for (const task of tasks) {
+    const sid = task.sessionId ?? null;
+    if (!sid || seen.has(sid)) continue;
+    const s = sessionsById.get(sid);
+    if (s) {
+      seen.add(sid);
+      out.push(s);
+    }
+  }
+  return out;
+}
+
 const filteredOrchestrators = computed(() => {
-  let list = orchestrators.value;
+  let list = orchestrators.value.filter((o) => !o.archived);
+  if (activeFilter.value) {
+    list = list.filter((o) => o.tags === activeFilter.value);
+  }
+  return [...list].sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  );
+});
+
+const filteredArchivedOrchestrators = computed(() => {
+  let list = orchestrators.value.filter((o) => o.archived);
   if (activeFilter.value) {
     list = list.filter((o) => o.tags === activeFilter.value);
   }
@@ -191,7 +218,10 @@ const filteredSessions = computed(() => {
   });
 });
 
-const archivedCount = computed(() => archivedSessions.value.length);
+const archivedCount = computed(
+  () =>
+    archivedSessions.value.length + orchestrators.value.filter((o) => o.archived).length
+);
 
 const filteredArchivedSessions = computed(() => {
   let list = archivedSessions.value;
@@ -203,7 +233,7 @@ const filteredArchivedSessions = computed(() => {
 
 type CombinedItem =
   | { kind: 'session'; session: Session }
-  | { kind: 'orchestrator'; orchestrator: Orchestrator };
+  | { kind: 'orchestrator'; orchestrator: Orchestrator; nestedSessions: Session[] };
 
 const combinedItems = computed<CombinedItem[]>(() => {
   const sessionItems = filteredSessions.value.map((session) => ({
@@ -212,7 +242,8 @@ const combinedItems = computed<CombinedItem[]>(() => {
   }));
   const orchestratorItems = filteredOrchestrators.value.map((orchestrator) => ({
     kind: 'orchestrator' as const,
-    orchestrator
+    orchestrator,
+    nestedSessions: orderedNestedSessions(orchestrator)
   }));
   const merged: CombinedItem[] = [...sessionItems, ...orchestratorItems];
   return merged.sort((a, b) => {
@@ -251,41 +282,59 @@ const selectionActive = computed(() => selectedIds.value.size > 0);
 const visibleSelectableSessions = computed<Session[]>(() =>
   showArchived.value ? [...filteredSessions.value, ...filteredArchivedSessions.value] : filteredSessions.value
 );
-const allSelected = computed(
-  () =>
-    visibleSelectableSessions.value.length > 0 &&
-    visibleSelectableSessions.value.every((s) => selectedIds.value.has(s.id))
+const orchestratorSelectionActive = computed(() => orchestratorSelectedIds.value.size > 0);
+
+/** Total selected rows (sessions + orchestrators) for the multiselect bar. */
+const multiselectTotalCount = computed(
+  () => selectedIds.value.size + orchestratorSelectedIds.value.size
 );
 
-const orchestratorSelectionActive = computed(() => orchestratorSelectedIds.value.size > 0);
-const orchestratorAllSelected = computed(
-  () =>
-    filteredOrchestrators.value.length > 0 &&
-    filteredOrchestrators.value.every((o) => orchestratorSelectedIds.value.has(o.id))
-);
+/** True when every visible session and every visible orchestrator is selected. */
+const multiselectAllSelected = computed(() => {
+  const sessionsOk =
+    visibleSelectableSessions.value.length === 0 ||
+    visibleSelectableSessions.value.every((s) => selectedIds.value.has(s.id));
+  const orchOk =
+    filteredOrchestrators.value.length === 0 ||
+    filteredOrchestrators.value.every((o) => orchestratorSelectedIds.value.has(o.id));
+  return sessionsOk && orchOk;
+});
+
+function toggleSelectAllMultiselect(): void {
+  if (multiselectAllSelected.value) {
+    selectedIds.value = new Set();
+    orchestratorSelectedIds.value = new Set();
+  } else {
+    selectedIds.value = new Set(visibleSelectableSessions.value.map((s) => s.id));
+    orchestratorSelectedIds.value = new Set(filteredOrchestrators.value.map((o) => o.id));
+  }
+}
 
 const selectedVisibleSessions = computed<Session[]>(() =>
   visibleSelectableSessions.value.filter((s) => selectedIds.value.has(s.id))
 );
-const bulkArchiveShouldUnarchive = computed(
-  () =>
-    selectedVisibleSessions.value.length > 0 &&
-    selectedVisibleSessions.value.every((s) => s.archived)
+
+const selectedVisibleOrchestrators = computed(() =>
+  orchestrators.value.filter((o) => orchestratorSelectedIds.value.has(o.id))
 );
+
+/** True when every selected session and orchestrator is archived (unarchive mode for the archive action). */
+const multiselectArchiveShouldUnarchive = computed(() => {
+  const sessions = selectedVisibleSessions.value;
+  const orchs = selectedVisibleOrchestrators.value;
+  if (sessions.length === 0 && orchs.length === 0) return false;
+  const sessionsAllArchived =
+    sessions.length === 0 || sessions.every((s) => s.archived);
+  const orchAllArchived =
+    orchs.length === 0 || orchs.every((o) => o.archived ?? false);
+  return sessionsAllArchived && orchAllArchived;
+});
 
 function toggleSelect(id: string): void {
   const next = new Set(selectedIds.value);
   if (next.has(id)) next.delete(id);
   else next.add(id);
   selectedIds.value = next;
-}
-
-function toggleSelectAll(): void {
-  if (allSelected.value) {
-    selectedIds.value = new Set();
-  } else {
-    selectedIds.value = new Set(visibleSelectableSessions.value.map((s) => s.id));
-  }
 }
 
 function clearSelection(): void {
@@ -336,18 +385,6 @@ function toggleSelectOrchestrator(id: string): void {
   if (next.has(id)) next.delete(id);
   else next.add(id);
   orchestratorSelectedIds.value = next;
-}
-
-function toggleSelectAllOrchestrators(): void {
-  if (orchestratorAllSelected.value) {
-    orchestratorSelectedIds.value = new Set();
-  } else {
-    orchestratorSelectedIds.value = new Set(filteredOrchestrators.value.map((o) => o.id));
-  }
-}
-
-function clearOrchestratorSelection(): void {
-  orchestratorSelectedIds.value = new Set();
 }
 
 function onOrchItemPointerDown(orchestrator: Orchestrator, e: PointerEvent): void {
@@ -437,9 +474,10 @@ const loadAgentCapabilities = async (): Promise<void> => {
   }
 };
 
-const fetchOrchestrators = async (): Promise<void> => {
+const fetchOrchestrators = async (opts?: { silent?: boolean }): Promise<void> => {
   if (!workspaceId.value) return;
-  orchestratorsLoading.value = true;
+  const silent = opts?.silent === true;
+  if (!silent) orchestratorsLoading.value = true;
   try {
     const { data } = await orchestratorApi.list(workspaceId.value);
     orchestrators.value = data ?? [];
@@ -447,7 +485,8 @@ const fetchOrchestrators = async (): Promise<void> => {
     console.error('Failed to fetch orchestrators:', error);
     orchestrators.value = [];
   } finally {
-    orchestratorsLoading.value = false;
+    if (!silent) orchestratorsLoading.value = false;
+    orchestratorsInitialFetched.value = true;
   }
 };
 
@@ -532,21 +571,40 @@ const deleteOrchestrator = async (): Promise<void> => {
   }
 };
 
-const bulkDeleteOrchestrators = async (): Promise<void> => {
-  if (!props.workspace || orchestratorSelectedIds.value.size === 0) return;
-  isBulkDeletingOrchestrators.value = true;
+const bulkDeleteCombinedDescription = computed((): string => {
+  const nS = selectedIds.value.size;
+  const nO = orchestratorSelectedIds.value.size;
+  if (nS > 0 && nO > 0) {
+    return `Delete ${nS} session${nS === 1 ? '' : 's'} and ${nO} orchestrator${nO === 1 ? '' : 's'}? Step sessions tied to the selected orchestrators are removed too. This cannot be undone.`;
+  }
+  if (nS > 0) {
+    return `Delete ${nS} selected session${nS === 1 ? '' : 's'}? This cannot be undone.`;
+  }
+  return `Delete ${nO} selected orchestrator${nO === 1 ? '' : 's'}? Their step sessions will be removed too. This cannot be undone.`;
+});
+
+const bulkDeleteCombined = async (): Promise<void> => {
+  if (!props.workspace) return;
+  const sessionIds = [...selectedIds.value];
+  const orchIds = [...orchestratorSelectedIds.value];
+  if (sessionIds.length === 0 && orchIds.length === 0) return;
+  isBulkDeletingCombined.value = true;
   try {
-    const ids = [...orchestratorSelectedIds.value];
-    await Promise.all(ids.map((id) => orchestratorApi.remove(props.workspace!.id, id)));
-    orchestrators.value = orchestrators.value.filter(
-      (o) => !orchestratorSelectedIds.value.has(o.id)
-    );
-    orchestratorSelectedIds.value = new Set();
-    showBulkDeleteOrchestrators.value = false;
+    if (sessionIds.length > 0) {
+      await sessionsApi.bulkDelete(props.workspace.id, sessionIds);
+      selectedIds.value = new Set();
+    }
+    if (orchIds.length > 0) {
+      const orchSet = new Set(orchIds);
+      await Promise.all(orchIds.map((id) => orchestratorApi.remove(props.workspace!.id, id)));
+      orchestrators.value = orchestrators.value.filter((o) => !orchSet.has(o.id));
+      orchestratorSelectedIds.value = new Set();
+    }
+    showBulkDeleteCombined.value = false;
   } catch (error) {
-    console.error('Failed to bulk delete orchestrators:', error);
+    console.error('Failed to delete selection:', error);
   } finally {
-    isBulkDeletingOrchestrators.value = false;
+    isBulkDeletingCombined.value = false;
   }
 };
 
@@ -579,30 +637,46 @@ const toggleArchive = async (session: Session): Promise<void> => {
   }
 };
 
-const bulkDelete = async (): Promise<void> => {
-  if (!props.workspace || selectedIds.value.size === 0) return;
-  isBulkDeleting.value = true;
+const toggleArchiveOrchestrator = async (orchestrator: Orchestrator): Promise<void> => {
+  if (!props.workspace) return;
   try {
-    const ids = [...selectedIds.value];
-    await sessionsApi.bulkDelete(props.workspace.id, ids);
-    selectedIds.value = new Set();
-    showBulkDeleteConfirm.value = false;
+    const nextArchived = !orchestrator.archived;
+    const { data } = await orchestratorApi.update(props.workspace.id, orchestrator.id, {
+      archived: nextArchived
+    });
+    const idx = orchestrators.value.findIndex((o) => o.id === orchestrator.id);
+    if (idx >= 0 && data) orchestrators.value[idx] = data;
   } catch (error) {
-    console.error('Failed to bulk delete sessions:', error);
-  } finally {
-    isBulkDeleting.value = false;
+    console.error('Failed to toggle orchestrator archive:', error);
   }
 };
 
-const bulkArchive = async (archived: boolean): Promise<void> => {
-  if (!props.workspace || selectedIds.value.size === 0) return;
+const onMultiselectArchive = async (): Promise<void> => {
+  if (!props.workspace) return;
+  const wantArchived = !multiselectArchiveShouldUnarchive.value;
+  const sessionIds = [...selectedIds.value];
+  const orchIds = [...orchestratorSelectedIds.value];
+  if (sessionIds.length === 0 && orchIds.length === 0) return;
   isBulkArchiving.value = true;
   try {
-    const ids = [...selectedIds.value];
-    await sessionsApi.bulkArchive(props.workspace.id, ids, archived);
+    if (sessionIds.length > 0) {
+      await sessionsApi.bulkArchive(props.workspace.id, sessionIds, wantArchived);
+    }
+    if (orchIds.length > 0) {
+      await Promise.all(
+        orchIds.map(async (id) => {
+          const { data } = await orchestratorApi.update(props.workspace.id, id, {
+            archived: wantArchived
+          });
+          const idx = orchestrators.value.findIndex((o) => o.id === id);
+          if (idx >= 0 && data) orchestrators.value[idx] = data;
+        })
+      );
+    }
     selectedIds.value = new Set();
+    orchestratorSelectedIds.value = new Set();
   } catch (error) {
-    console.error('Failed to bulk archive sessions:', error);
+    console.error('Failed to archive selection:', error);
   } finally {
     isBulkArchiving.value = false;
   }
@@ -620,6 +694,7 @@ onBeforeUnmount(() => {
 });
 watch(workspaceId, (id) => {
   if (!id) return;
+  orchestratorsInitialFetched.value = false;
   ensureData();
   fetchOrchestrators();
 });
@@ -638,7 +713,7 @@ watch(
     }
     if (anyRunning && props.workspace) {
       orchestratorPollId.value = setInterval(() => {
-        fetchOrchestrators();
+        fetchOrchestrators({ silent: true });
       }, 3000);
     }
   },
@@ -719,7 +794,10 @@ onBeforeUnmount(() => {
     </div>
   </div>
 
-  <div v-if="sessionsLoading" class="flex flex-col items-center justify-center py-14 gap-4">
+  <div
+    v-if="sessionsLoading || !orchestratorsInitialFetched"
+    class="flex flex-col items-center justify-center py-14 gap-4"
+  >
     <div class="w-8 h-8 border-2 border-surface border-t-primary rounded-full animate-spin"></div>
     <p class="text-sm text-text-muted">Loading sessions…</p>
   </div>
@@ -793,14 +871,20 @@ onBeforeUnmount(() => {
               </button>
               <button
                 class="button is-icon hover:bg-warning/10! hover:border-warning!"
-                @click.prevent.stop="item.kind === 'session' && toggleArchive(item.session)"
+                @click.prevent.stop="
+                  item.kind === 'session'
+                    ? toggleArchive(item.session)
+                    : toggleArchiveOrchestrator(item.orchestrator)
+                "
               >
                 <span class="material-symbols-outlined text-warning">{{
                   item.kind === 'session'
                     ? item.session.archived
                       ? 'unarchive'
                       : 'inventory_2'
-                    : 'play_arrow'
+                    : item.orchestrator.archived
+                      ? 'unarchive'
+                      : 'inventory_2'
                 }}</span>
               </button>
               <button
@@ -816,104 +900,207 @@ onBeforeUnmount(() => {
     </div>
     <div v-else-if="viewMode === 'list'" class="list-view">
       <TransitionGroup name="list-stagger" tag="div" class="list-view-items">
-        <RouterLink
+        <div
           v-for="(item, index) in combinedItems"
           :key="item.kind === 'session' ? item.session.id : item.orchestrator.id"
           :style="{ '--stagger-index': index }"
-          class="group list-item"
-          :to="{
-            name: item.kind === 'session' ? 'session' : 'orchestrator',
-            params: {
-              id: workspaceId,
-              sessionId: item.kind === 'session' ? item.session.id : undefined,
-              orchestratorId: item.kind === 'orchestrator' ? item.orchestrator.id : undefined
-            }
-          }"
+          class="flex flex-col"
         >
-          <div v-if="item.kind === 'session'" class="cell !flex-none pr-0">
-            <button
-              type="button"
-              class="w-6 h-6 rounded border border-border bg-bg/90 text-primary flex items-center justify-center"
-              @click.prevent.stop="toggleSelect(item.session.id)"
-              :aria-label="selectedIds.has(item.session.id) ? 'Deselect session' : 'Select session'"
-            >
-              <span
-                v-if="selectedIds.has(item.session.id)"
-                class="material-symbols-outlined text-[16px] leading-none"
-                >check</span
+          <RouterLink
+            v-if="item.kind === 'session'"
+            class="group list-item"
+            :to="{
+              name: 'session',
+              params: { id: workspaceId, sessionId: item.session.id }
+            }"
+            @pointerdown="onItemPointerDown(item.session, $event)"
+            @pointerup="onItemPointerUp"
+            @pointerleave="onItemPointerUp"
+            @pointercancel="onItemPointerUp"
+            @pointermove="onItemPointerMove"
+            @click="handleSessionClick(item.session, $event)"
+          >
+            <div class="cell !flex-none pr-0">
+              <button
+                type="button"
+                class="w-6 h-6 rounded border border-border bg-bg/90 text-primary flex items-center justify-center"
+                @click.prevent.stop="toggleSelect(item.session.id)"
+                :aria-label="selectedIds.has(item.session.id) ? 'Deselect session' : 'Select session'"
               >
-            </button>
-          </div>
-          <div class="cell flex-1 min-w-0">
-            <p class="title flex items-center gap-2">
-              <span>{{
-                item.kind === 'session' ? item.session.name : item.orchestrator.name
-              }}</span>
-              <span
-                v-if="item.kind === 'session' && item.session.busy"
-                class="busy-badge text-[11px] px-2 py-0.5 rounded-full inline-flex items-center gap-1"
-                title="Session is running"
-              >
-                <span class="busy-spinner"></span>
-                Busy
-              </span>
-            </p>
-            <div
-              v-if="item.kind === 'session' && item.session.tags?.length"
-              class="flex flex-wrap gap-1 mt-1"
-            >
-              <span
-                v-for="tag in item.session.tags"
-                :key="tag"
-                class="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20 font-medium"
-              >
-                {{ tag }}
-              </span>
+                <span
+                  v-if="selectedIds.has(item.session.id)"
+                  class="material-symbols-outlined text-[16px] leading-none"
+                  >check</span
+                >
+              </button>
             </div>
-          </div>
-          <div class="cell">
-            <p
-              class="tag"
-              :class="
-                AGENT_TYPE_COLOR[
-                  item.kind === 'session' ? item.session.agentType : item.orchestrator.agentType
-                ]
-              "
+            <div class="cell flex-1 min-w-0">
+              <p class="title flex items-center gap-2">
+                <span>{{ item.session.name }}</span>
+                <span
+                  v-if="item.session.busy"
+                  class="busy-badge text-[11px] px-2 py-0.5 rounded-full inline-flex items-center gap-1"
+                  title="Session is running"
+                >
+                  <span class="busy-spinner"></span>
+                  Busy
+                </span>
+              </p>
+              <div v-if="item.session.tags?.length" class="flex flex-wrap gap-1 mt-1">
+                <span
+                  v-for="tag in item.session.tags"
+                  :key="tag"
+                  class="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20 font-medium"
+                >
+                  {{ tag }}
+                </span>
+              </div>
+            </div>
+            <div class="cell">
+              <p class="tag" :class="AGENT_TYPE_COLOR[item.session.agentType]">
+                {{ AGENT_TYPE_TEXT[item.session.agentType] }}
+              </p>
+            </div>
+            <div class="cell buttons">
+              <button
+                class="button is-icon"
+                @click.prevent.stop="sessionToEdit = item.session"
+              >
+                <span class="material-symbols-outlined">edit</span>
+              </button>
+              <button
+                class="button is-icon hover:bg-warning/10! hover:border-warning!"
+                @click.prevent.stop="toggleArchive(item.session)"
+              >
+                <span class="material-symbols-outlined text-warning">{{
+                  item.session.archived ? 'unarchive' : 'inventory_2'
+                }}</span>
+              </button>
+              <button
+                class="button is-icon hover:bg-destructive/10! hover:border-destructive!"
+                @click.prevent.stop="showDeleteModal(item)"
+              >
+                <span class="material-symbols-outlined text-destructive">delete</span>
+              </button>
+            </div>
+          </RouterLink>
+
+          <template v-else>
+            <RouterLink
+              class="group list-item"
+              :to="{
+                name: 'orchestrator',
+                params: { id: workspaceId, orchestratorId: item.orchestrator.id }
+              }"
+              @pointerdown="onOrchItemPointerDown(item.orchestrator, $event)"
+              @pointerup="onOrchItemPointerUp"
+              @pointerleave="onOrchItemPointerUp"
+              @pointercancel="onOrchItemPointerUp"
+              @pointermove="onOrchItemPointerMove"
+              @click="handleOrchestratorClick(item.orchestrator, $event)"
             >
-              {{
-                AGENT_TYPE_TEXT[
-                  item.kind === 'session' ? item.session.agentType : item.orchestrator.agentType
-                ]
-              }}
-            </p>
-          </div>
-          <div class="cell buttons">
-            <button
-              class="button is-icon"
-              @click.prevent.stop="item.kind === 'session' && (sessionToEdit = item.session)"
+              <div class="cell !flex-none pr-0">
+                <button
+                  type="button"
+                  class="w-6 h-6 rounded border border-border bg-bg/90 text-primary flex items-center justify-center"
+                  @click.prevent.stop="toggleSelectOrchestrator(item.orchestrator.id)"
+                  :aria-label="
+                    orchestratorSelectedIds.has(item.orchestrator.id)
+                      ? 'Deselect orchestrator'
+                      : 'Select orchestrator'
+                  "
+                >
+                  <span
+                    v-if="orchestratorSelectedIds.has(item.orchestrator.id)"
+                    class="material-symbols-outlined text-[16px] leading-none"
+                    >check</span
+                  >
+                </button>
+              </div>
+              <div class="cell flex-1 min-w-0">
+                <p class="title flex items-center gap-2">
+                  <span class="material-symbols-outlined text-text-muted shrink-0 text-[18px]"
+                    >account_tree</span
+                  >
+                  <span>{{ item.orchestrator.name }}</span>
+                  <span
+                    v-if="item.orchestrator.runStatus === 'running'"
+                    class="busy-badge text-[11px] px-2 py-0.5 rounded-full inline-flex items-center gap-1"
+                    title="Orchestrator is running"
+                  >
+                    <span class="busy-spinner"></span>
+                    Running
+                  </span>
+                </p>
+              </div>
+              <div class="cell">
+                <p class="tag" :class="AGENT_TYPE_COLOR[item.orchestrator.agentType]">
+                  {{ AGENT_TYPE_TEXT[item.orchestrator.agentType] }}
+                </p>
+              </div>
+              <div class="cell buttons">
+                <button class="button is-icon" @click.prevent.stop>
+                  <span class="material-symbols-outlined">edit</span>
+                </button>
+                <button
+                  class="button is-icon hover:bg-warning/10! hover:border-warning!"
+                  @click.prevent.stop="toggleArchiveOrchestrator(item.orchestrator)"
+                >
+                  <span class="material-symbols-outlined text-warning">inventory_2</span>
+                </button>
+                <button
+                  class="button is-icon hover:bg-destructive/10! hover:border-destructive!"
+                  @click.prevent.stop="showDeleteModal(item)"
+                >
+                  <span class="material-symbols-outlined text-destructive">delete</span>
+                </button>
+              </div>
+            </RouterLink>
+
+            <RouterLink
+              v-for="child in item.nestedSessions"
+              :key="child.id"
+              class="group list-item bg-fg/[0.02] border-l-2 border-l-primary/25 ml-4 pl-2 !cursor-pointer"
+              :to="{
+                name: 'session',
+                params: { id: workspaceId, sessionId: child.id }
+              }"
             >
-              <span class="material-symbols-outlined">edit</span>
-            </button>
-            <button
-              class="button is-icon hover:bg-warning/10! hover:border-warning!"
-              @click.prevent.stop="item.kind === 'session' && toggleArchive(item.session)"
-            >
-              <span class="material-symbols-outlined text-warning">{{
-                item.kind === 'session'
-                  ? item.session.archived
-                    ? 'unarchive'
-                    : 'inventory_2'
-                  : 'play_arrow'
-              }}</span>
-            </button>
-            <button
-              class="button is-icon hover:bg-destructive/10! hover:border-destructive!"
-              @click.prevent.stop="showDeleteModal(item)"
-            >
-              <span class="material-symbols-outlined text-destructive">delete</span>
-            </button>
-          </div>
-        </RouterLink>
+              <div class="cell flex-1 min-w-0 flex items-start gap-2">
+                <span class="material-symbols-outlined text-text-muted shrink-0 text-[16px] mt-0.5"
+                  >subdirectory_arrow_right</span
+                >
+                <div class="min-w-0 flex-1">
+                  <p class="title flex items-center gap-2 flex-wrap">
+                    <span>{{ child.name }}</span>
+                    <span
+                      v-if="child.busy"
+                      class="busy-badge text-[11px] px-2 py-0.5 rounded-full inline-flex items-center gap-1"
+                      title="Session is running"
+                    >
+                      <span class="busy-spinner"></span>
+                      Busy
+                    </span>
+                  </p>
+                  <div v-if="child.tags?.length" class="flex flex-wrap gap-1 mt-1">
+                    <span
+                      v-for="tag in child.tags"
+                      :key="tag"
+                      class="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20 font-medium"
+                    >
+                      {{ tag }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div class="cell shrink-0">
+                <p class="tag" :class="AGENT_TYPE_COLOR[child.agentType]">
+                  {{ AGENT_TYPE_TEXT[child.agentType] }}
+                </p>
+              </div>
+            </RouterLink>
+          </template>
+        </div>
       </TransitionGroup>
     </div>
 
@@ -1000,6 +1187,70 @@ onBeforeUnmount(() => {
                 </div>
               </RouterLink>
             </TransitionGroup>
+
+            <template v-if="filteredArchivedOrchestrators.length > 0">
+              <p
+                v-if="filteredArchivedSessions.length > 0"
+                class="text-xs font-medium text-text-muted mt-6 mb-2"
+              >
+                Orchestrators
+              </p>
+              <TransitionGroup name="list-stagger" tag="div" class="grid-view-items">
+                <RouterLink
+                  v-for="(orch, index) in filteredArchivedOrchestrators"
+                  :key="'arch-orch-' + orch.id"
+                  :style="{ '--stagger-index': index }"
+                  class="group grid-item opacity-60 hover:opacity-80 transition-opacity"
+                  :to="{
+                    name: 'orchestrator',
+                    params: { id: workspaceId, orchestratorId: orch.id }
+                  }"
+                >
+                  <div class="top">
+                    <div class="icon">
+                      <span class="material-symbols-outlined">account_tree</span>
+                    </div>
+                    <div class="info">
+                      <p class="title flex items-center gap-2">
+                        <span>{{ orch.name }}</span>
+                        <span
+                          v-if="orch.runStatus === 'running'"
+                          class="busy-badge text-[11px] px-2 py-0.5 rounded-full inline-flex items-center gap-1"
+                          title="Orchestrator is running"
+                        >
+                          <span class="busy-spinner"></span>
+                          Running
+                        </span>
+                      </p>
+                      <p class="tag" :class="AGENT_TYPE_COLOR[orch.agentType]">
+                        {{ AGENT_TYPE_TEXT[orch.agentType] }}
+                      </p>
+                    </div>
+                    <div class="buttons">
+                      <button
+                        class="button is-icon"
+                        @click.prevent.stop="toggleArchiveOrchestrator(orch)"
+                        title="Unarchive"
+                      >
+                        <span class="material-symbols-outlined text-primary">unarchive</span>
+                      </button>
+                      <button
+                        class="button is-icon hover:bg-destructive/10! hover:border-destructive!"
+                        @click.prevent.stop="
+                          showDeleteModal({
+                            kind: 'orchestrator',
+                            orchestrator: orch,
+                            nestedSessions: orderedNestedSessions(orch)
+                          })
+                        "
+                      >
+                        <span class="material-symbols-outlined text-destructive">delete</span>
+                      </button>
+                    </div>
+                  </div>
+                </RouterLink>
+              </TransitionGroup>
+            </template>
           </div>
 
           <div v-else class="list-view">
@@ -1071,6 +1322,135 @@ onBeforeUnmount(() => {
                 </div>
               </RouterLink>
             </TransitionGroup>
+
+            <template v-if="filteredArchivedOrchestrators.length > 0">
+              <p
+                v-if="filteredArchivedSessions.length > 0"
+                class="text-xs font-medium text-text-muted mt-6 mb-2 px-2"
+              >
+                Orchestrators
+              </p>
+              <TransitionGroup name="list-stagger" tag="div" class="list-view-items">
+                <div
+                  v-for="(orch, oix) in filteredArchivedOrchestrators"
+                  :key="'arch-orch-' + orch.id"
+                  :style="{ '--stagger-index': oix }"
+                  class="flex flex-col"
+                >
+                  <RouterLink
+                    class="group list-item opacity-60 hover:opacity-80 transition-opacity"
+                    :to="{
+                      name: 'orchestrator',
+                      params: { id: workspaceId, orchestratorId: orch.id }
+                    }"
+                  >
+                    <div class="cell !flex-none pr-0">
+                      <button
+                        type="button"
+                        class="w-6 h-6 rounded border border-border bg-bg/90 text-primary flex items-center justify-center"
+                        @click.prevent.stop="toggleSelectOrchestrator(orch.id)"
+                        :aria-label="
+                          orchestratorSelectedIds.has(orch.id)
+                            ? 'Deselect orchestrator'
+                            : 'Select orchestrator'
+                        "
+                      >
+                        <span
+                          v-if="orchestratorSelectedIds.has(orch.id)"
+                          class="material-symbols-outlined text-[16px] leading-none"
+                          >check</span
+                        >
+                      </button>
+                    </div>
+                    <div class="cell flex-1 min-w-0">
+                      <p class="title flex items-center gap-2">
+                        <span class="material-symbols-outlined text-text-muted shrink-0 text-[18px]"
+                          >account_tree</span
+                        >
+                        <span>{{ orch.name }}</span>
+                        <span
+                          v-if="orch.runStatus === 'running'"
+                          class="busy-badge text-[11px] px-2 py-0.5 rounded-full inline-flex items-center gap-1"
+                          title="Orchestrator is running"
+                        >
+                          <span class="busy-spinner"></span>
+                          Running
+                        </span>
+                      </p>
+                    </div>
+                    <div class="cell">
+                      <p class="tag" :class="AGENT_TYPE_COLOR[orch.agentType]">
+                        {{ AGENT_TYPE_TEXT[orch.agentType] }}
+                      </p>
+                    </div>
+                    <div class="cell buttons">
+                      <button
+                        class="button is-icon"
+                        @click.prevent.stop="toggleArchiveOrchestrator(orch)"
+                        title="Unarchive"
+                      >
+                        <span class="material-symbols-outlined text-primary">unarchive</span>
+                      </button>
+                      <button
+                        class="button is-icon hover:bg-destructive/10! hover:border-destructive!"
+                        @click.prevent.stop="
+                          showDeleteModal({
+                            kind: 'orchestrator',
+                            orchestrator: orch,
+                            nestedSessions: orderedNestedSessions(orch)
+                          })
+                        "
+                      >
+                        <span class="material-symbols-outlined text-destructive">delete</span>
+                      </button>
+                    </div>
+                  </RouterLink>
+
+                  <RouterLink
+                    v-for="child in orderedNestedSessions(orch)"
+                    :key="'arch-orch-' + orch.id + '-sub-' + child.id"
+                    class="group list-item bg-fg/[0.02] border-l-2 border-l-primary/25 ml-4 pl-2 !cursor-pointer opacity-60 hover:opacity-80 transition-opacity"
+                    :to="{
+                      name: 'session',
+                      params: { id: workspaceId, sessionId: child.id }
+                    }"
+                  >
+                    <div class="cell flex-1 min-w-0 flex items-start gap-2">
+                      <span class="material-symbols-outlined text-text-muted shrink-0 text-[16px] mt-0.5"
+                        >subdirectory_arrow_right</span
+                      >
+                      <div class="min-w-0 flex-1">
+                        <p class="title flex items-center gap-2 flex-wrap">
+                          <span>{{ child.name }}</span>
+                          <span
+                            v-if="child.busy"
+                            class="busy-badge text-[11px] px-2 py-0.5 rounded-full inline-flex items-center gap-1"
+                            title="Session is running"
+                          >
+                            <span class="busy-spinner"></span>
+                            Busy
+                          </span>
+                        </p>
+                        <div v-if="child.tags?.length" class="flex flex-wrap gap-1 mt-1">
+                          <span
+                            v-for="tag in child.tags"
+                            :key="tag"
+                            class="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20 font-medium"
+                          >
+                            {{ tag }}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="cell shrink-0">
+                      <p class="tag" :class="AGENT_TYPE_COLOR[child.agentType]">
+                        {{ AGENT_TYPE_TEXT[child.agentType] }}
+                      </p>
+                    </div>
+                  </RouterLink>
+                </div>
+              </TransitionGroup>
+            </template>
           </div>
         </div>
       </Transition>
@@ -1079,31 +1459,39 @@ onBeforeUnmount(() => {
 
   <Transition name="fade">
     <div
-      v-if="selectionActive"
+      v-if="selectionActive || orchestratorSelectionActive"
       class="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 w-[min(960px,calc(100%-1rem))] bg-surface border border-border rounded-xl px-3 py-2 shadow-xl"
     >
-      <div class="flex flex-wrap items-center gap-2">
-        <span class="text-sm text-text-muted min-w-0">
-          {{ selectedIds.size }} selected
-        </span>
-        <button class="button" @click="toggleSelectAll">
-          {{ allSelected ? 'Clear all' : 'Select all' }}
-        </button>
-        <div class="ml-auto flex items-center gap-2">
+      <div class="flex flex-wrap items-center justify-between gap-y-2 gap-x-3 w-full">
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-2 min-w-0">
+          <span class="text-sm text-text-muted whitespace-nowrap">
+            {{ multiselectTotalCount }} item{{ multiselectTotalCount === 1 ? '' : 's' }}
+          </span>
+          <button type="button" class="button" @click="toggleSelectAllMultiselect">
+            {{ multiselectAllSelected ? 'Clear all' : 'Select all' }}
+          </button>
+        </div>
+        <div class="flex items-center gap-2 shrink-0 ml-auto">
           <button
+            v-if="selectedIds.size > 0 || orchestratorSelectedIds.size > 0"
+            type="button"
             class="button is-icon hover:bg-warning/10! hover:border-warning!"
             :disabled="isBulkArchiving"
-            @click="bulkArchive(bulkArchiveShouldUnarchive ? false : true)"
-            :aria-label="bulkArchiveShouldUnarchive ? 'Unarchive selected' : 'Archive selected'"
-            :title="bulkArchiveShouldUnarchive ? 'Unarchive selected' : 'Archive selected'"
+            @click="onMultiselectArchive"
+            :aria-label="
+              multiselectArchiveShouldUnarchive ? 'Unarchive selected' : 'Archive selected'
+            "
+            :title="multiselectArchiveShouldUnarchive ? 'Unarchive selected' : 'Archive selected'"
           >
             <span class="material-symbols-outlined text-warning">{{
-              bulkArchiveShouldUnarchive ? 'unarchive' : 'archive'
+              multiselectArchiveShouldUnarchive ? 'unarchive' : 'archive'
             }}</span>
           </button>
           <button
+            v-if="selectedIds.size > 0 || orchestratorSelectedIds.size > 0"
+            type="button"
             class="button is-icon is-primary"
-            @click="showBulkDeleteConfirm = true"
+            @click="showBulkDeleteCombined = true"
             aria-label="Delete selected"
             title="Delete selected"
           >
@@ -1129,23 +1517,23 @@ onBeforeUnmount(() => {
   />
 
   <ConfirmModal
-    :model-value="showBulkDeleteConfirm"
-    title="Delete sessions"
-    :description="`Delete ${selectedIds.size} selected session${selectedIds.size === 1 ? '' : 's'}? This cannot be undone.`"
+    :model-value="showBulkDeleteCombined"
+    title="Delete selected"
+    :description="bulkDeleteCombinedDescription"
     confirm-label="Delete all"
-    :loading="isBulkDeleting"
+    :loading="isBulkDeletingCombined"
     @update:model-value="
       (v: boolean) => {
-        if (!v) showBulkDeleteConfirm = false;
+        if (!v) showBulkDeleteCombined = false;
       }
     "
-    @confirm="bulkDelete"
+    @confirm="bulkDeleteCombined"
   />
 
   <ConfirmModal
     :model-value="orchestratorToDelete !== null"
     title="Delete orchestrator"
-    :description="`Delete '${orchestratorToDelete?.name}'? This cannot be undone.`"
+    :description="`Delete '${orchestratorToDelete?.name}'? Step sessions created for this plan will be removed too. This cannot be undone.`"
     confirm-label="Delete"
     :loading="isDeletingOrchestrator"
     @update:model-value="
@@ -1154,20 +1542,6 @@ onBeforeUnmount(() => {
       }
     "
     @confirm="deleteOrchestrator"
-  />
-
-  <ConfirmModal
-    :model-value="showBulkDeleteOrchestrators"
-    title="Delete orchestrators"
-    :description="`Delete ${orchestratorSelectedIds.size} selected orchestrator${orchestratorSelectedIds.size === 1 ? '' : 's'}? This cannot be undone.`"
-    confirm-label="Delete all"
-    :loading="isBulkDeletingOrchestrators"
-    @update:model-value="
-      (v: boolean) => {
-        if (!v) showBulkDeleteOrchestrators = false;
-      }
-    "
-    @confirm="bulkDeleteOrchestrators"
   />
 
   <SessionEditModal

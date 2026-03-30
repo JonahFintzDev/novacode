@@ -1,5 +1,5 @@
 // node_modules
-import { readdir, readFile, writeFile, mkdir, unlink, rename } from 'node:fs/promises';
+import { readdir, readFile, writeFile, mkdir, unlink, rename, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { resolve, normalize } from 'node:path';
 
@@ -28,6 +28,13 @@ export type WorkspaceRuleErrorCode =
 export type WorkspaceRuleResult<T> =
   | { ok: true; value: T }
   | { ok: false; code: WorkspaceRuleErrorCode; message: string };
+
+/** Filenames reserved for host / IDE defaults; not shown or editable in the workspace Rules UI. */
+const WORKSPACE_RULES_UI_HIDDEN_FILENAMES = new Set(['global-agent-defaults.mdc']);
+
+export function isWorkspaceRuleHiddenFromUi(filename: string): boolean {
+  return WORKSPACE_RULES_UI_HIDDEN_FILENAMES.has(filename.trim().toLowerCase());
+}
 
 function workspaceRoot(): string {
   return resolve(config.workspaceBrowseRoot);
@@ -99,13 +106,26 @@ export async function listWorkspaceRuleFiles(
 
   try {
     const entries = await readdir(rulesDir, { withFileTypes: true });
-    const files: WorkspaceRuleFileSummary[] = entries
-      .filter((d) => d.isFile())
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((d) => ({
+    const sorted = [...entries].sort((a, b) => a.name.localeCompare(b.name));
+    const files: WorkspaceRuleFileSummary[] = [];
+    for (const d of sorted) {
+      if (d.isDirectory()) continue;
+      let isRuleFile = d.isFile();
+      if (d.isSymbolicLink()) {
+        try {
+          const st = await stat(resolve(rulesDir, d.name));
+          isRuleFile = st.isFile();
+        } catch {
+          isRuleFile = false;
+        }
+      }
+      if (!isRuleFile) continue;
+      if (isWorkspaceRuleHiddenFromUi(d.name)) continue;
+      files.push({
         filename: d.name,
         label: d.name.replace(/\.(md|mdc)$/i, '')
-      }));
+      });
+    }
     return { ok: true, value: files };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to list rules directory';
@@ -119,6 +139,14 @@ export async function readWorkspaceRuleFile(
 ): Promise<WorkspaceRuleResult<WorkspaceRuleFileContent>> {
   const nameResult = sanitizeRuleFilename(filename);
   if (!nameResult.ok) return nameResult;
+
+  if (isWorkspaceRuleHiddenFromUi(nameResult.value)) {
+    return {
+      ok: false,
+      code: 'FILE_NOT_FOUND',
+      message: 'Rule file not found'
+    };
+  }
 
   const dirResult = await getWorkspaceRulesDir(workspaceId);
   if (!dirResult.ok) return dirResult;
@@ -169,6 +197,14 @@ export async function writeWorkspaceRuleFile(
   const nameResult = sanitizeRuleFilename(filename);
   if (!nameResult.ok) return nameResult;
 
+  if (isWorkspaceRuleHiddenFromUi(nameResult.value)) {
+    return {
+      ok: false,
+      code: 'INVALID_FILENAME',
+      message: 'That filename is reserved for system defaults and cannot be edited here'
+    };
+  }
+
   const dirResult = await getWorkspaceRulesDir(workspaceId);
   if (!dirResult.ok) return dirResult;
 
@@ -201,6 +237,14 @@ export async function deleteWorkspaceRuleFile(
 ): Promise<WorkspaceRuleResult<{ filename: string }>> {
   const nameResult = sanitizeRuleFilename(filename);
   if (!nameResult.ok) return nameResult;
+
+  if (isWorkspaceRuleHiddenFromUi(nameResult.value)) {
+    return {
+      ok: false,
+      code: 'INVALID_FILENAME',
+      message: 'That filename is reserved for system defaults and cannot be removed here'
+    };
+  }
 
   const dirResult = await getWorkspaceRulesDir(workspaceId);
   if (!dirResult.ok) return dirResult;
@@ -254,6 +298,14 @@ export async function renameWorkspaceRuleFile(
   if (!newResult.ok) return newResult;
   if (oldResult.value === newResult.value) {
     return { ok: true, value: { filename: newResult.value } };
+  }
+
+  if (isWorkspaceRuleHiddenFromUi(oldResult.value) || isWorkspaceRuleHiddenFromUi(newResult.value)) {
+    return {
+      ok: false,
+      code: 'INVALID_FILENAME',
+      message: 'That filename is reserved for system defaults'
+    };
   }
 
   const dirResult = await getWorkspaceRulesDir(workspaceId);

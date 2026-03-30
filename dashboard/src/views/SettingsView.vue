@@ -31,7 +31,7 @@ import {
 } from '@/lib/notifications';
 
 // types
-import type { McpClientServer } from '@/@types/index';
+import type { McpClientServer, McpConnectivityCheckResult } from '@/@types/index';
 
 // -------------------------------------------------- Data --------------------------------------------------
 const activeTab = ref<'general' | 'git' | 'integrations' | 'mcp'>('general');
@@ -90,6 +90,9 @@ const mcpClientForm = ref<{
   headers: string;
 }>({ name: '', type: 'command', command: '', args: '', env: '', url: '', headers: '' });
 const mcpClientFormError = ref<string>('');
+const bCheckingMcpConnectivity = ref<boolean>(false);
+const mcpConnectivityResults = ref<Record<string, McpConnectivityCheckResult> | null>(null);
+const mcpConnectivityError = ref<string>('');
 
 // -------------------------------------------------- Computed --------------------------------------------------
 // (none)
@@ -563,6 +566,23 @@ const deleteMcpClient = async (name: string): Promise<void> => {
     // ignore
   } finally {
     bSavingMcpClients.value = false;
+  }
+};
+
+const runMcpConnectivityCheck = async (): Promise<void> => {
+  if (Object.keys(mcpClients.value).length === 0) {
+    return;
+  }
+  mcpConnectivityError.value = '';
+  bCheckingMcpConnectivity.value = true;
+  mcpConnectivityResults.value = null;
+  try {
+    const response = await settingsApi.checkMcpClients();
+    mcpConnectivityResults.value = response.data.results;
+  } catch {
+    mcpConnectivityError.value = 'Connectivity check failed.';
+  } finally {
+    bCheckingMcpConnectivity.value = false;
   }
 };
 
@@ -1145,15 +1165,61 @@ onMounted((): void => {
           </p>
 
           <div class="bg-fg/[0.02] border border-fg/[0.07] rounded-xl p-5">
-            <div class="flex items-center justify-between gap-4 mb-4">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
               <span class="text-sm text-text-primary">Configured servers</span>
-              <button
-                class="flex items-center gap-2 bg-primary hover:bg-primary-hover disabled:opacity-50 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-all"
-                :disabled="bSavingMcpClients"
-                @click="openAddMcpClient"
+              <div class="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  class="flex items-center gap-2 bg-fg/[0.05] hover:bg-fg/[0.09] disabled:opacity-50 disabled:cursor-not-allowed border border-fg/[0.1] text-text-primary text-sm font-medium px-4 py-2.5 rounded-lg transition-all"
+                  :disabled="
+                    bSavingMcpClients ||
+                    bLoadingMcpClients ||
+                    bCheckingMcpConnectivity ||
+                    Object.keys(mcpClients).length === 0
+                  "
+                  @click="runMcpConnectivityCheck"
+                >
+                  <span
+                    v-if="bCheckingMcpConnectivity"
+                    class="w-3.5 h-3.5 border-2 border-fg/30 border-t-fg rounded-full animate-spin"
+                  ></span>
+                  Test connectivity
+                </button>
+                <button
+                  class="flex items-center gap-2 bg-primary hover:bg-primary-hover disabled:opacity-50 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-all"
+                  :disabled="bSavingMcpClients"
+                  @click="openAddMcpClient"
+                >
+                  Add server
+                </button>
+              </div>
+            </div>
+            <p class="text-xs text-text-muted mb-4">
+              Dry-run: command (stdio) servers are spawned briefly on the host; HTTP servers are
+              requested with GET. Fix failures here before agents load MCP mid-session.
+            </p>
+            <p v-if="mcpConnectivityError" class="text-xs text-destructive mb-3">
+              {{ mcpConnectivityError }}
+            </p>
+            <div
+              v-if="mcpConnectivityResults && Object.keys(mcpConnectivityResults).length > 0"
+              class="mb-4 rounded-lg border border-fg/[0.08] bg-fg/[0.03] divide-y divide-fg/[0.06]"
+            >
+              <div
+                v-for="(res, name) in mcpConnectivityResults"
+                :key="name"
+                class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-1 px-3 py-2.5 text-sm"
               >
-                Add server
-              </button>
+                <span class="font-medium text-text-primary">{{ name }}</span>
+                <span
+                  class="text-xs font-medium shrink-0"
+                  :class="res.ok ? 'text-success' : 'text-destructive'"
+                >
+                  {{ res.ok ? `${res.kind === 'http' ? 'HTTP' : 'stdio'} OK` : 'Failed' }}
+                  <span v-if="res.detail" class="text-text-muted font-normal"> — {{ res.detail }}</span>
+                  <span v-if="res.error" class="text-destructive"> — {{ res.error }}</span>
+                </span>
+              </div>
             </div>
             <div v-if="bLoadingMcpClients" class="text-sm text-text-muted py-4">Loading…</div>
             <div
