@@ -15,7 +15,7 @@ NOVACODE_CONFIG="${NOVACODE_DIR}/config"
 NOVACODE_POSTGRES_DATA="${NOVACODE_DIR}/postgres-data"
 
 # Published image (override in .env as NOVACODE_IMAGE).
-NOVACODE_IMAGE_DEFAULT="${NOVACODE_IMAGE:-novacode/novacode:latest}"
+NOVACODE_IMAGE_DEFAULT="${NOVACODE_IMAGE:-ghcr.io/jonahfintzdev/novacode:latest}"
 
 # Base URL for fetching docker-compose.install.yml (no trailing slash).
 NOVACODE_INSTALL_BASE_URL="${NOVACODE_INSTALL_BASE_URL:-https://raw.githubusercontent.com/JonahFintzDev/novacode/main}"
@@ -85,50 +85,6 @@ expand_path() {
   fi
 }
 
-compose_embedded() {
-  cat <<'YAML'
-services:
-  novacode:
-    image: ${NOVACODE_IMAGE:-novacode/novacode:latest}
-    ports:
-      - "${PORT:-3030}:3030"
-    env_file:
-      - .env
-    restart: unless-stopped
-    networks:
-      - novacode
-    environment:
-      UID: ${UID}
-      GID: ${GID}
-      JWT_SECRET: ${JWT_SECRET}
-      PORT: ${PORT}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: "5432"
-    volumes:
-      - ${NOVACODE_CONFIG_DIR}:/config
-
-  postgres:
-    image: postgres:17
-    ports:
-      - "127.0.0.1:${POSTGRES_PUBLISH_PORT:-5432}:5432"
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    volumes:
-      - ${NOVACODE_POSTGRES_DATA_DIR}:/var/lib/postgresql/data
-    restart: unless-stopped
-    networks:
-      - novacode
-
-networks:
-  novacode:
-    driver: bridge
-YAML
-}
 
 fetch_compose() {
   local dest="$1"
@@ -145,8 +101,8 @@ write_compose() {
   if fetch_compose "$dest"; then
     echo "Fetched docker-compose from ${COMPOSE_FETCH_URL}"
   else
-    echo "Could not fetch compose (curl missing or URL unreachable). Using embedded template." >&2
-    compose_embedded >"$dest"
+    echo "Could not fetch compose (curl missing or URL unreachable). Stopping installation." >&2
+    exit 1
   fi
 }
 
