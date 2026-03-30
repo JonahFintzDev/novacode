@@ -198,7 +198,7 @@ export const themes: Theme[] = [
 ];
 
 export const DEFAULT_THEME_ID = 'infrared';
-export const DEFAULT_DARK_THEME_ID = 'infrared';
+export const DEFAULT_DARK_THEME_ID = 'deep-space';
 export const DEFAULT_LIGHT_THEME_ID = 'cloud';
 
 function isLightHex(hex: string): boolean {

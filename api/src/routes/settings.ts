@@ -48,7 +48,7 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
       gitUserEmail: user?.gitUserEmail ?? null,
       theme: user?.theme ?? 'infrared',
       autoTheme: user?.autoTheme ?? false,
-      darkTheme: user?.darkTheme ?? 'infrared',
+      darkTheme: user?.darkTheme ?? 'deep-space',
       lightTheme: user?.lightTheme ?? 'cloud',
       modelSelection: user?.modelSelection ?? 'auto',
       sshPublicKey: ssh.sshPublicKey,
@@ -101,7 +101,7 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
       const gitUserEmail = body.gitUserEmail !== undefined ? body.gitUserEmail : existing.gitUserEmail ?? null;
       const theme = body.theme !== undefined ? body.theme : existing.theme ?? 'infrared';
       const autoTheme = body.autoTheme !== undefined ? body.autoTheme : existing.autoTheme ?? false;
-      const darkTheme = body.darkTheme !== undefined ? body.darkTheme : existing.darkTheme ?? 'infrared';
+      const darkTheme = body.darkTheme !== undefined ? body.darkTheme : existing.darkTheme ?? 'deep-space';
       const lightTheme = body.lightTheme !== undefined ? body.lightTheme : existing.lightTheme ?? 'cloud';
       const modelSelection = body.modelSelection !== undefined ? body.modelSelection : existing.modelSelection ?? 'auto';
 
