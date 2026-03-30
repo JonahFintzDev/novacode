@@ -40,7 +40,7 @@ Optional features include **scheduled automations**, **role templates**, and **b
 - **Cursor Agent**: On creation, the server may run `cursor-agent -f create-chat` in the workspace directory to obtain an external session id stored on the session.
 - **Claude**: Sessions are created without that PTY bootstrap step (Claude Code is used differently in the flow).
 - **List / get / patch / delete**: Sessions support **rename**, **tags**, **archive**, and can be listed globally or per workspace (including archived where applicable).
-- **Chat history**: Messages are stored in the database (`messageJson` on the session).
+- **Chat history**: Messages are stored in the database (`messageJson` on the session). Session **list** responses omit `messageJson` for size; denormalized **`lastPreviewText`** / **`lastPreviewRole`** (`user` \| `assistant`) are updated when chat is persisted so sidebars can show a last-message snippet without loading full history. On **list** and **global WebSocket snapshot**, sessions missing those fields are **backfilled once** from `message_json` (then persisted) so older threads still show a preview.
 - **Real-time**: WebSocket endpoints for **session** streams and **chat**; separate channels for workspace-level session list updates (create/update/delete, “busy” state for active chat runs).
 - **Images**: Upload **base64 images** to a session for multimodal-style prompts (stored under `/config`, with cleanup on session delete).
 

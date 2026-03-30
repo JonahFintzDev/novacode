@@ -64,6 +64,9 @@ model Session {
   sessionId   String?   @map("session_id")
   agentType   String    @map("agent_type")
   messageJson String    @map("message_json")
+  /** Denormalized snippet for session lists (sidebar); updated when chat is saved */
+  lastPreviewText String? @map("last_preview_text")
+  lastPreviewRole String? @map("last_preview_role")
   workspaceId String
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   promptQueue SessionPromptQueue[]

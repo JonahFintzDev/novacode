@@ -10,6 +10,8 @@ import { config } from './config';
 import { isWorkspaceRuleHiddenFromUi } from './workspaceRules';
 import { parseAgentStream } from './agentStreamParser';
 import { sendTaskDonePush } from './push';
+import { computeLastListPreview, extractLastAssistantText } from './chatPreview';
+import { broadcastSessionListUpsert } from './sessionListBroadcast';
 
 // types
 import type { ChatMessage, AgentType } from '../@types/index';
@@ -65,27 +67,6 @@ function emitBusy(sessionId: string, workspaceId: string, busy: boolean): void {
       // ignore subscriber errors
     }
   }
-}
-
-function extractLastAssistantText(events: string[]): string {
-  let text = '';
-  for (const line of events) {
-    try {
-      const event = JSON.parse(line) as {
-        type?: string;
-        message?: { content?: Array<{ type?: string; text?: string }> };
-      };
-      if (event.type !== 'assistant' || !Array.isArray(event.message?.content)) continue;
-      const chunk = event.message.content
-        .filter((b) => b.type === 'text')
-        .map((b) => b.text ?? '')
-        .join('');
-      if (chunk) text += chunk;
-    } catch {
-      // ignore malformed lines
-    }
-  }
-  return text.trim();
 }
 
 export function addSubscriber(sessionId: string, subscriber: ChatSubscriber): void {
@@ -202,6 +183,25 @@ export async function dispatchPrompt(opts: DispatchPromptOpts): Promise<{ error?
     createdAt: new Date().toISOString()
   };
   currentMessages.push(userMessage);
+
+  const previewAfterUser = computeLastListPreview(currentMessages);
+  try {
+    await db.updateSession(sessionId, {
+      messageJson: JSON.stringify(currentMessages),
+      ...(previewAfterUser
+        ? {
+            lastPreviewText: previewAfterUser.lastPreviewText,
+            lastPreviewRole: previewAfterUser.lastPreviewRole
+          }
+        : {})
+    });
+    const fresh = await db.getSession(sessionId);
+    if (fresh) broadcastSessionListUpsert(fresh.workspaceId, fresh);
+  } catch (err) {
+    currentMessages.pop();
+    console.error('[chatEngine] Failed to persist user message / preview:', err);
+    return { error: 'Failed to save message' };
+  }
 
   const effectiveText = imagePaths.length > 0 ? `${text}\n\n${imagePaths.join('\n')}` : text;
 
@@ -353,8 +353,19 @@ export async function dispatchPrompt(opts: DispatchPromptOpts): Promise<{ error?
     };
     currentMessages.push(assistantMessage);
 
+    const previewDone = computeLastListPreview(currentMessages);
     try {
-      await db.updateSession(sessionId, { messageJson: JSON.stringify(currentMessages) });
+      await db.updateSession(sessionId, {
+        messageJson: JSON.stringify(currentMessages),
+        ...(previewDone
+          ? {
+              lastPreviewText: previewDone.lastPreviewText,
+              lastPreviewRole: previewDone.lastPreviewRole
+            }
+          : { lastPreviewText: null, lastPreviewRole: null })
+      });
+      const fresh = await db.getSession(sessionId);
+      if (fresh) broadcastSessionListUpsert(fresh.workspaceId, fresh);
     } catch (err) {
       console.error('[chatEngine] Failed to save messages:', err);
     }

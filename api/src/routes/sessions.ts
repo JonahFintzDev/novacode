@@ -51,6 +51,7 @@ export async function sessionsRoutes(fastify: FastifyInstance): Promise<void> {
     const allSessions = byWorkspace
       .flatMap(([active, archived]) => [...active, ...archived])
       .map((s) => ({ ...normalizeSessionForApi(s), busy: busyIds.has(s.id) }));
+    await db.enrichSessionListPreviews(allSessions);
     return reply.send(allSessions);
   });
 
@@ -106,6 +107,7 @@ export async function sessionsRoutes(fastify: FastifyInstance): Promise<void> {
         ...normalizeSessionForApi(s),
         busy: busyIds.has(s.id)
       }));
+      await db.enrichSessionListPreviews(enriched);
       return reply.send(enriched);
     }
   );

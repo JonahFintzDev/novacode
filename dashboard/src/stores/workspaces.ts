@@ -54,12 +54,21 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
 
   function upsertSession(next: Session): void {
     const idx = allSessions.value.findIndex((s) => s.id === next.id);
+    const prev = idx === -1 ? null : allSessions.value[idx];
+    const merged: Session = {
+      ...(prev ?? {}),
+      ...next,
+      messageJson:
+        typeof next.messageJson === 'string' && next.messageJson.length > 0
+          ? next.messageJson
+          : (prev?.messageJson ?? '[]')
+    };
     if (idx === -1) {
-      allSessions.value = [next, ...allSessions.value];
+      allSessions.value = [merged, ...allSessions.value];
       return;
     }
     const updated = [...allSessions.value];
-    updated[idx] = next;
+    updated[idx] = merged;
     allSessions.value = updated;
   }
 

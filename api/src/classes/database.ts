@@ -19,7 +19,8 @@ import type { AutomationModel as Automation } from '../generated/client/models/A
 import type { AutomationRunModel as AutomationRun } from '../generated/client/models/AutomationRun';
 import type { UserModel } from '../generated/client/models';
 import type { PushSubscriptionModel as PushSubscription } from '../generated/client/models/PushSubscription';
-import type { ChatQueueItem } from '../@types/index';
+import type { ChatMessage, ChatQueueItem } from '../@types/index';
+import { computeLastListPreview } from './chatPreview';
 
 /** Session without messageJson */
 export type SessionWithCategory = Omit<Session, 'messageJson'>;
@@ -257,6 +258,50 @@ export const db = {
     }) as Promise<SessionWithCategory[]>;
   },
 
+  /**
+   * List payloads omit `messageJson`. If `last_preview_*` was never set (older rows),
+   * derive from `message_json` and persist so future lists are cheap.
+   */
+  async enrichSessionListPreviews<
+    T extends { id: string; lastPreviewText?: string | null; lastPreviewRole?: string | null }
+  >(sessions: T[]): Promise<void> {
+    const missing = sessions.filter(
+      (s) => s.lastPreviewText == null || String(s.lastPreviewText).trim() === ''
+    );
+    if (missing.length === 0) return;
+
+    const rows = await _prisma.session.findMany({
+      where: { id: { in: missing.map((m) => m.id) } },
+      select: { id: true, messageJson: true }
+    });
+    const byId = new Map(rows.map((r) => [r.id, r.messageJson]));
+
+    for (const s of missing) {
+      const mj = byId.get(s.id);
+      if (!mj || mj === '[]') continue;
+      let messages: ChatMessage[];
+      try {
+        messages = JSON.parse(mj) as ChatMessage[];
+      } catch {
+        continue;
+      }
+      if (!Array.isArray(messages) || messages.length === 0) continue;
+      const p = computeLastListPreview(messages);
+      if (!p) continue;
+      s.lastPreviewText = p.lastPreviewText;
+      s.lastPreviewRole = p.lastPreviewRole;
+      void _prisma.session
+        .update({
+          where: { id: s.id },
+          data: {
+            lastPreviewText: p.lastPreviewText,
+            lastPreviewRole: p.lastPreviewRole
+          }
+        })
+        .catch((err) => console.error('[db] enrichSessionListPreviews persist failed', s.id, err));
+    }
+  },
+
   async getSession(id: string): Promise<SessionWithCategoryAndMessages | undefined> {
     const row = await _prisma.session.findUnique({ where: { id } });
     return (row ?? undefined) as SessionWithCategoryAndMessages | undefined;
@@ -296,6 +341,8 @@ export const db = {
     patch: {
       sessionId?: string | null;
       messageJson?: string;
+      lastPreviewText?: string | null;
+      lastPreviewRole?: string | null;
       name?: string;
       tags?: string[] | null;
       archived?: boolean;
@@ -319,6 +366,8 @@ export const db = {
       data: {
         sessionId: patch.sessionId ?? existing.sessionId,
         messageJson: patch.messageJson ?? existing.messageJson,
+        ...(patch.lastPreviewText !== undefined && { lastPreviewText: patch.lastPreviewText }),
+        ...(patch.lastPreviewRole !== undefined && { lastPreviewRole: patch.lastPreviewRole }),
         name: patch.name ?? existing.name,
         ...(tagsJson !== undefined && { tags: tagsJson }),
         archived: patch.archived ?? existing.archived,

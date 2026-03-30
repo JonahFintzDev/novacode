@@ -14,6 +14,10 @@ import type { Session, Orchestrator } from '@/@types/index';
 
 // utils
 import { subtasksFromStoredJson } from '@/utils/orchestratorPayload';
+import { formatSessionSidebarPreview, previewFromMessageJson } from '@/utils/sessionListPreview';
+
+// components
+import AgentSessionAvatar from '@/components/AgentSessionAvatar.vue';
 
 // -------------------------------------------------- Props --------------------------------------------------
 const props = defineProps<{
@@ -109,6 +113,18 @@ const CATEGORY_COLORS = [
   'bg-yellow-500/15 text-yellow-400 border-yellow-500/20',
   'bg-red-500/15 text-red-400 border-red-500/20'
 ];
+
+function sessionPreviewLine(session: Session): string {
+  const fromColumns = formatSessionSidebarPreview(session.lastPreviewText, session.lastPreviewRole);
+  if (fromColumns) return fromColumns;
+  const fromHistory = previewFromMessageJson(session.messageJson ?? null);
+  return fromHistory ? formatSessionSidebarPreview(fromHistory.text, fromHistory.role) : '';
+}
+
+function orchestratorPreviewLine(orch: Orchestrator): string {
+  const p = previewFromMessageJson(orch.messageJson);
+  return p ? formatSessionSidebarPreview(p.text, p.role) : '';
+}
 
 function categoryColorClass(name: string): string {
   let hash = 0;
@@ -259,7 +275,7 @@ watch(
           <template v-if="item.kind === 'session'">
             <button
               type="button"
-              class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left text-sm transition-colors border"
+              class="w-full flex items-start gap-3 px-3 py-2.5 rounded-lg text-left transition-colors border"
               :class="[
                 activeKind === 'session' && activeId === item.session.id
                   ? 'bg-primary/15 border-primary/40 text-text-primary'
@@ -267,56 +283,41 @@ watch(
               ]"
               @click="open(item)"
             >
-              <span
-                class="material-symbols-outlined select-none shrink-0"
-                :class="item.session.busy ? 'text-primary' : 'text-text-muted'"
-                style="font-size: 20px"
-              >
-                forum
-              </span>
+              <AgentSessionAvatar :agent-type="item.session.agentType" />
 
-              <div class="flex-1 min-w-0 flex flex-col gap-0.5">
-                <div class="flex items-center gap-1 min-w-0">
-                  <span class="truncate">
+              <div class="flex-1 min-w-0 flex flex-col gap-0.5 pt-0.5">
+                <div class="flex items-baseline gap-2 min-w-0">
+                  <span class="truncate flex-1 min-w-0 text-sm font-medium text-text-primary">
                     {{ item.session.name || 'Untitled session' }}
                   </span>
-                </div>
-                <div class="flex items-center gap-1 text-[11px] text-text-muted">
-                  <span
-                    class="px-1.5 py-0.5 rounded border inline-flex items-center gap-1"
-                    :class="
-                      item.session.agentType === 'claude'
-                        ? 'bg-orange-500/15 text-orange-400 border-orange-500/20'
-                        : 'bg-violet-500/15 text-violet-400 border-violet-500/20'
-                    "
-                  >
-                    <span class="material-symbols-outlined select-none" style="font-size: 11px"
-                      >smart_toy</span
-                    >
-                    {{ item.session.agentType === 'claude' ? 'Claude' : 'Cursor' }}
-                  </span>
-                  <template v-if="item.session.tags?.length">
-                    <span class="mx-1 text-fg/40 shrink-0">•</span>
-                    <span class="inline-flex flex-wrap items-center gap-1 min-w-0">
-                      <span
-                        v-for="tag in item.session.tags"
-                        :key="tag"
-                        class="px-1.5 py-0.5 rounded-full border text-[11px]"
-                        :class="categoryColorClass(tag)"
-                      >
-                        {{ tag }}
-                      </span>
-                    </span>
-                  </template>
-                  <span class="ml-auto">
+                  <span class="text-[11px] text-text-muted shrink-0 whitespace-nowrap tabular-nums">
                     {{ relativeTime(item.session.updatedAt) }}
+                  </span>
+                </div>
+                <p
+                  v-if="sessionPreviewLine(item.session)"
+                  class="text-xs text-text-muted truncate min-w-0 leading-snug"
+                >
+                  {{ sessionPreviewLine(item.session) }}
+                </p>
+                <div
+                  v-if="item.session.tags?.length"
+                  class="inline-flex flex-wrap items-center gap-1 min-w-0 mt-0.5"
+                >
+                  <span
+                    v-for="tag in item.session.tags"
+                    :key="tag"
+                    class="px-1.5 py-0.5 rounded-full border text-[11px]"
+                    :class="categoryColorClass(tag)"
+                  >
+                    {{ tag }}
                   </span>
                 </div>
               </div>
 
               <span
                 v-if="item.session.busy"
-                class="inline-flex items-center gap-1.5 text-[11px] text-primary shrink-0"
+                class="inline-flex items-center gap-1.5 text-[11px] text-primary shrink-0 self-center"
               >
                 <span
                   class="w-3 h-3 border-2 border-primary/40 border-t-primary rounded-full animate-spin"
@@ -330,7 +331,7 @@ watch(
             <div class="rounded-lg border border-border/60 bg-fg/[0.02] overflow-hidden">
               <button
                 type="button"
-                class="w-full flex items-center gap-3 px-3 py-2 text-left text-sm transition-colors"
+                class="w-full flex items-start gap-3 px-3 py-2.5 text-left transition-colors"
                 :class="[
                   activeKind === 'orchestrator' && activeId === item.orchestrator.id
                     ? 'bg-primary/15 text-text-primary'
@@ -338,39 +339,28 @@ watch(
                 ]"
                 @click="open(item)"
               >
-                <span class="material-symbols-outlined select-none shrink-0 text-text-muted" style="font-size: 20px"
-                  >account_tree</span
-                >
+                <AgentSessionAvatar :agent-type="item.orchestrator.agentType" />
 
-                <div class="flex-1 min-w-0 flex flex-col gap-0.5">
-                  <div class="flex items-center gap-1 min-w-0">
-                    <span class="truncate">
+                <div class="flex-1 min-w-0 flex flex-col gap-0.5 pt-0.5">
+                  <div class="flex items-baseline gap-2 min-w-0">
+                    <span class="truncate flex-1 min-w-0 text-sm font-medium text-text-primary">
                       {{ item.orchestrator.name || 'Untitled orchestrator' }}
                     </span>
-                  </div>
-                  <div class="flex items-center gap-1 text-[11px] text-text-muted">
-                    <span
-                      class="px-1.5 py-0.5 rounded border inline-flex items-center gap-1"
-                      :class="
-                        item.orchestrator.agentType === 'claude'
-                          ? 'bg-orange-500/15 text-orange-400 border-orange-500/20'
-                          : 'bg-violet-500/15 text-violet-400 border-violet-500/20'
-                      "
-                    >
-                      <span class="material-symbols-outlined select-none" style="font-size: 11px"
-                        >smart_toy</span
-                      >
-                      {{ item.orchestrator.agentType === 'claude' ? 'Claude' : 'Cursor' }}
-                    </span>
-                    <span class="ml-auto">
+                    <span class="text-[11px] text-text-muted shrink-0 whitespace-nowrap tabular-nums">
                       {{ relativeTime(item.orchestrator.updatedAt) }}
                     </span>
                   </div>
+                  <p
+                    v-if="orchestratorPreviewLine(item.orchestrator)"
+                    class="text-xs text-text-muted truncate min-w-0 leading-snug"
+                  >
+                    {{ orchestratorPreviewLine(item.orchestrator) }}
+                  </p>
                 </div>
 
                 <span
                   v-if="item.orchestrator.runStatus === 'running'"
-                  class="inline-flex items-center gap-1.5 text-[11px] text-primary shrink-0"
+                  class="inline-flex items-center gap-1.5 text-[11px] text-primary shrink-0 self-center"
                 >
                   <span
                     class="w-3 h-3 border-2 border-primary/40 border-t-primary rounded-full animate-spin"

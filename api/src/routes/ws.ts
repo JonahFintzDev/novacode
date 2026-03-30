@@ -9,6 +9,7 @@ import { db } from '../classes/database';
 import { normalizeSessionForApi } from '../classes/sessionNormalize';
 import { getActiveSessionIds } from './chat';
 import { subscribeBusy } from '../classes/chatEngine';
+import { registerSessionListBroadcaster } from '../classes/sessionListBroadcast';
 
 // types
 import type { WsClientMessage, WsServerMessage } from '../@types/index';
@@ -43,6 +44,8 @@ export function broadcastWorkspaceSessionUpsert(workspaceId: string, session: un
   broadcastWorkspace(workspaceId, { type: 'session-upsert', session });
   broadcastGlobalSessions({ type: 'session-upsert', session });
 }
+
+registerSessionListBroadcaster(broadcastWorkspaceSessionUpsert);
 
 export function broadcastWorkspaceSessionDeleted(workspaceId: string, id: string): void {
   broadcastWorkspace(workspaceId, { type: 'session-deleted', id });
@@ -178,6 +181,7 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
       const allSessions = byWorkspace
         .flatMap(([active, archived]) => [...active, ...archived])
         .map((s) => ({ ...normalizeSessionForApi(s), busy: busyIds.has(s.id) }));
+      await db.enrichSessionListPreviews(allSessions);
       sendJson(socket, { type: 'global-snapshot', sessions: allSessions });
 
       socket.on('close', () => {

@@ -225,6 +225,7 @@ export function applyTheme(themeId: string): void {
   root.style.setProperty('--color-text-primary', theme.textPrimary);
   root.style.setProperty('--color-text-muted', theme.textMuted);
   root.style.setProperty('--color-fg', isLightHex(theme.bg) ? '#000000' : '#ffffff');
+  root.setAttribute('data-theme', theme.dark ? 'dark' : 'light');
   document.body.style.background = theme.bg;
   document.body.style.color = theme.textPrimary;
 }

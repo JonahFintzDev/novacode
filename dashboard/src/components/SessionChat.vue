@@ -965,7 +965,7 @@ onUnmounted(() => {
         </button>
 
         <button
-          class="p-2 rounded text-text-muted hover:text-destructive hover:bg-fg/[0.06] transition-colors"
+          class="button is-transparent is-icon hover:!text-destructive hover:!bg-destructive/10"
           title="Delete session"
           @click="showDeleteModal = true"
         >

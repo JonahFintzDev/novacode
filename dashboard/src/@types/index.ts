@@ -67,7 +67,11 @@ export interface Session {
   tags: string[] | null;
   sessionId: string | null;
   agentType: AgentType;
-  messageJson: string;
+  /** Present on session detail; omitted on list endpoints to save bandwidth */
+  messageJson?: string;
+  /** Denormalized last chat line for sidebars (from API list / WebSocket) */
+  lastPreviewText?: string | null;
+  lastPreviewRole?: 'user' | 'assistant' | null;
   workspaceId: string;
   createdAt: string;
   updatedAt: string;
