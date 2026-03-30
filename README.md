@@ -78,13 +78,13 @@ curl -fsSL https://raw.githubusercontent.com/JonahFintzDev/novacode/main/scripts
 
 **Prerequisites:** Docker with Compose (`docker compose` or `docker-compose`), and `openssl` on first install.
 
-The script writes `~/.novacode/.env` with generated secrets, pulls `novacode/novacode:latest`, and starts Compose. Re-run the same command to update. Optional environment variables:
+The script writes `~/.novacode/.env` with generated secrets, pulls `ghcr.io/jonahfintzdev/novacode:latest`, and starts Compose. Re-run the same command to update. Optional environment variables:
 
 | Variable | Purpose |
 |----------|---------|
 | `NOVACODE_DIR` | Install root (default: `~/.novacode`) |
 | `NOVACODE_INSTALL_BASE_URL` | Raw URL of the repo root for fetched compose and `.env.example` (see `scripts/install.sh`) |
-| `NOVACODE_IMAGE` | Image tag (default: `novacode/novacode:latest`) |
+| `NOVACODE_IMAGE` | Image tag (default: `ghcr.io/jonahfintzdev/novacode:latest`) |
 
 On first install you may be prompted for extra host directory mounts (workspaces under `/data-root/...`). Then open **`http://localhost:3030`** and complete **first-run setup**.
 

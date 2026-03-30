@@ -329,7 +329,7 @@ Usage: $(basename "$0") [-h|--help]
 
 Environment:
   NOVACODE_DIR              Install root (default: ~/.novacode)
-  NOVACODE_IMAGE            Default image if not in .env (default: novacode/novacode:latest)
+  NOVACODE_IMAGE            Default image if not in .env (default: ghcr.io/jonahfintzdev/novacode:latest)
   NOVACODE_INSTALL_BASE_URL Base URL for ${COMPOSE_REL_PATH} (default: ${NOVACODE_INSTALL_BASE_URL})
 EOF
 }
