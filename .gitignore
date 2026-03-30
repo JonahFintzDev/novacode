@@ -14,6 +14,8 @@ api/dev.db
 api/prisma/dev.db
 api/src/generated/
 local.docker-compose.yml
+.claude
+.cursor
 
 # Affinity / Dropbox lock artifacts (dashboard public assets)
 **/logo.af~lock~
