@@ -29,6 +29,7 @@ import { automationRoutes } from './routes/automations';
 import { startAutomationScheduler, stopAutomationScheduler } from './classes/automationScheduler';
 import { imageRoutes } from './routes/images';
 import { pushRoutes } from './routes/push';
+import { searchRoutes } from './routes/search';
 import { ensureVapidKeys } from './classes/push';
 import { ensureSshKey } from './classes/sshKey';
 
@@ -73,6 +74,7 @@ async function main(): Promise<void> {
   await fastify.register(automationRoutes);
   await fastify.register(imageRoutes);
   await fastify.register(pushRoutes);
+  await fastify.register(searchRoutes);
 
   // recover stale orchestrator runs from previous process
   try {

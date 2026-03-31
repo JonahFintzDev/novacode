@@ -14,6 +14,10 @@ withDefaults(
   { isOpen: false }
 );
 
+defineEmits<{
+  (e: 'search'): void;
+}>();
+
 // -------------------------------------------------- Data --------------------------------------------------
 const workspacesStore = useWorkspacesStore();
 
@@ -155,6 +159,15 @@ onMounted(() => {
     </nav>
 
     <div class="border-t border-border p-3 space-y-1 shrink-0">
+      <!-- Search button (visible on mobile) -->
+      <button
+        class="lg:hidden w-full main-nav-link flex items-center gap-3 px-3 py-2.5 text-sm text-text-muted hover:text-text-primary hover:bg-input rounded-lg transition-all duration-200"
+        @click.prevent.stop="$emit('search')"
+      >
+        <span class="material-symbols-outlined select-none text-xl">search</span>
+        Search
+      </button>
+      
       <RouterLink
         to="/settings"
         class="main-nav-link flex items-center gap-3 px-3 py-2.5 text-sm text-text-muted hover:text-text-primary hover:bg-input rounded-lg transition-all duration-200"

@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/auth';
 defineProps<{
   sidebarOpen: boolean;
   onMenuClick: () => void;
+  onSearchClick: () => void;
 }>();
 
 // -------------------------------------------------- Store --------------------------------------------------
@@ -116,6 +117,20 @@ router.afterEach(() => {
       </svg>
       <span class="text-base tracking-tight text-primary!">NovaCode</span>
     </RouterLink>
+    
+    <!-- Center: search bar (visible on desktop) -->
+    <div class="hidden lg:flex flex-1 min-w-0 max-w-md mx-4">
+      <button
+        @click="onSearchClick"
+        class="w-full flex items-center gap-2 px-3 py-1.5 bg-input border border-transparent rounded-lg hover:bg-fg/[0.06] transition-colors text-text-muted hover:text-text-primary"
+        aria-label="Search"
+      >
+        <span class="material-symbols-outlined select-none">search</span>
+        <span class="truncate text-sm">Search...</span>
+        <kbd class="ml-auto text-xs text-text-muted/70 hidden sm:inline">Ctrl K</kbd>
+      </button>
+    </div>
+    
     <div class="flex-1 min-w-0" aria-hidden="true" />
 
     <!-- Right: user menu -->
