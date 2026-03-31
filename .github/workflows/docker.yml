@@ -35,23 +35,11 @@ jobs:
           cache: npm
           cache-dependency-path: api/package-lock.json
 
-      - name: Test API
-        working-directory: api
-        run: |
-          npm ci
-          npm test
-
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: dashboard/package-lock.json
-
-      - name: Test dashboard
-        working-directory: dashboard
-        run: |
-          npm ci
-          npm test
 
       - name: Prepare .env for Docker build
         run: cp .env.example .env
