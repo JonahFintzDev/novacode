@@ -51,6 +51,7 @@ interface FormState {
 
 const AGENT_OPTIONS: { value: AgentType; label: string }[] = [
   { value: 'cursor-agent', label: 'Cursor' },
+  { value: 'mistral-vibe', label: 'Mistral Vibe' },
   { value: 'claude', label: 'Claude' }
 ];
 

@@ -4,7 +4,7 @@
 
 **Self-hosted dashboard for AI coding agents**
 
-Run [Cursor Agent](https://cursor.com) and [Claude Code](https://claude.ai/code) against your own repos through a clean web UI — no cloud, no lock-in.
+Run [Cursor Agent](https://cursor.com), [Claude Code](https://claude.ai/code), and optionally **[Mistral Vibe](https://mistral.ai)** (`vibe` CLI) against your own repos through a clean web UI — no cloud, no lock-in.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-24-green)](https://nodejs.org)
@@ -47,7 +47,7 @@ Run [Cursor Agent](https://cursor.com) and [Claude Code](https://claude.ai/code)
 |---|---|
 | **Home** | Session overview: busy and idle counts, recently active strip, optional compact list; jump to workspaces from there. |
 | **Workspaces** | Map any directory on your host to a named project. Group, color-code, tag, and archive. |
-| **Sessions** | Start a Cursor Agent or Claude Code session per workspace. Streaming chat over WebSocket, image attachments, tags, archive, and bulk actions via the sessions list multiselect bar. The in-workspace **Sessions** sidebar shows agent avatars, relative time, and a WhatsApp-style last-message preview (`You: …` for your messages). Session header action buttons use consistent square icon controls (edit/archive/delete). |
+| **Sessions** | Start a **Cursor Agent**, **Claude Code**, or **Mistral Vibe** session per workspace. Streaming chat over WebSocket, image attachments, tags, archive, and bulk actions via the sessions list multiselect bar. The in-workspace **Sessions** sidebar shows agent avatars, relative time, and a WhatsApp-style last-message preview (`You: …` for your messages). Session header action buttons use consistent square icon controls (edit/archive/delete). |
 | **Terminal** | Full PTY-backed terminal output via `node-pty` and xterm.js. |
 | **Orchestrators** | Multi-step task plans: decompose a goal into subtasks, run each step in its own session. The orchestrator detail header matches session controls (sidebar toggle, workspace subtitle, edit/archive/delete actions). Deleting an orchestrator removes its step sessions too. |
 | **Automations** | Schedule recurring agent prompts per workspace (cron-style intervals). |
@@ -65,7 +65,7 @@ Run [Cursor Agent](https://cursor.com) and [Claude Code](https://claude.ai/code)
 ## Requirements
 
 - **Docker + Docker Compose** (recommended) — or Node.js 24 + PostgreSQL 17 for a manual install
-- **Cursor Agent** and/or **Claude Code** CLI — installed and authenticated on the host (see [Agent setup](#agent-setup))
+- **Cursor Agent** and/or **Claude Code** CLI — installed and authenticated on the host (see [Agent setup](#agent-setup)); optional **Mistral Vibe** (`vibe` CLI + API key in Settings)
 - Directories you want to work on must appear under `/data-root` in the container (with the stock compose, that is everything under `~/.novacode/data` on the host, or extra bind mounts you add)
 
 ---
@@ -118,7 +118,7 @@ docker compose up --build -d
 > On first launch the app shows a **setup screen** — create your admin account there. No pre-seeding required.
 
 > [!NOTE]
-> The `novacode` container needs the Cursor Agent and Claude Code CLIs available. They are installed during the Docker build. Log in to each agent from **Settings → Agent Auth** inside the app.
+> The `novacode` container includes the Cursor Agent and Claude Code CLIs (Docker build). Log in to each from **Settings → Agent Auth**. For **Mistral Vibe**, install the `vibe` CLI on the image/host if you use it, and set the API key under **Settings** (stored as `~/.vibe/.env` on the config volume).
 
 ---
 
@@ -155,16 +155,39 @@ Copy `.env.example` to `.env` and edit the values below.
 | Variable | Description |
 |----------|-------------|
 | `AGENT_ENV_*` | Any env var prefixed with `AGENT_ENV_` is forwarded to spawned agents with the prefix stripped |
+| `VIBE_COMMAND` | *(optional)* Executable for Mistral Vibe (default: `vibe` on `PATH`) |
 
 ---
 
 ## Agent setup
 
-NovaCode spawns **Cursor Agent** and **Claude Code** as child processes inside the container. Both CLIs are installed during the Docker build. After starting the app:
+NovaCode spawns **Cursor Agent** and **Claude Code** as child processes inside the container (both installed in the Docker build). **Mistral Vibe** is optional: the `vibe` binary must be on `PATH` inside the container, and you configure the API key under **Settings → Mistral Vibe** (written to `.vibe/.env` under `/config`). Chat runs use `vibe --prompt "…" --output streaming` (JSONL, same stream shape as Cursor for the UI). The app does not rely on a session id from stdout: after each run it resolves the latest `session_*` folder under `~/.vibe/logs/session` (with `HOME=/config` in the default deployment, that is `/config/.vibe/logs/session`) using the timestamp embedded in the folder name when it matches `session_YYYYMMDD_HHMMSS_*`, otherwise the directory mtime, then persists the suffix after the final underscore as the id for `--resume` on the next turn. Set **`VIBE_HOME`** in the environment (or **`AGENT_ENV_VIBE_HOME`** to forward into agents) if you use a non-default Vibe data directory. After starting the app:
 
 1. Go to **Settings → Agent Auth**
 2. Log in to Cursor and/or Claude — the app opens an interactive terminal session for the auth flow
 3. Credentials are stored under `/config` (by default `~/.novacode/config` on the host via the stock compose file) and persist across restarts
+
+For **Mistral Vibe**, install the `vibe` CLI, set the API key under **Settings → Mistral Vibe**, and ensure the process can write Vibe’s log tree (under `/config` when `HOME` points there). Example of what NovaCode runs for each user message (workspace rules may be prepended inside the prompt string):
+
+```bash
+vibe --prompt "Your request here" --output streaming
+```
+
+Follow-up turns add `--resume <id>` once an id has been stored.
+
+### How session ids differ by agent
+
+| Agent | Where the external session id comes from |
+|-------|------------------------------------------|
+| **Cursor** | `cursor-agent -f create-chat` when the session is created |
+| **Claude** | `session_id` in Claude’s streaming JSON on the first prompt |
+| **Mistral Vibe** | **Not** from CLI stdout — after each run, the latest `session_*` folder under `~/.vibe/logs/session` (or `$VIBE_HOME/logs/session`), using embedded `YYYYMMDD_HHMMSS` in the name when present, else directory mtime; the stored id is the suffix after the final `_` (e.g. `session_20260330_220714_85007cf6` → `85007cf6`) |
+
+### Troubleshooting (Mistral Vibe)
+
+- **Agent unavailable in the UI** — `vibe` must pass `vibe --help` on the server `PATH`, and the API key must be saved in Settings (see `GET /api/settings/agent-capabilities` / `mistralVibeAvailable`). Override the binary with **`VIBE_COMMAND`** if needed.
+- **Resume not applied** — if no valid `session_*` directory appears after a run (permissions, wrong `HOME` / **`VIBE_HOME`**), the server logs a warning and the next turn may run **without** `--resume`. Check that `~/.vibe/logs/session` (or `$VIBE_HOME/logs/session`) exists and is writable by the API process.
+- **Wrong session picked** — ensure no other `vibe` runs are racing to create folders in the same log directory; the server picks the latest folder by the rules above.
 
 ---
 
@@ -280,7 +303,7 @@ app/
 | Real-time | WebSocket (`@fastify/websocket`) |
 | Terminal | [node-pty](https://github.com/microsoft/node-pty) · [xterm.js](https://xtermjs.org) |
 | Frontend | [Vue 3](https://vuejs.org) · [Pinia](https://pinia.vuejs.org) · [Tailwind CSS v4](https://tailwindcss.com) |
-| Agents | Cursor Agent CLI · Claude Code CLI |
+| Agents | Cursor Agent CLI · Claude Code CLI · Mistral Vibe CLI (`vibe`, optional) |
 
 ---
 
@@ -291,6 +314,7 @@ Pull requests are welcome. For larger changes, please open an issue first to dis
 ### Coding conventions
 
 Refactors and new code should follow the shared conventions in `/data-root/personal/CODING_CONVENTIONS.md` (import grouping, Vue section layout, boolean naming, and explicit control-flow braces).
+Recent UI refactors also standardize modal/component scripts to the section-header layout (`Props`, `Emits`, `Data`, `Computed`, `Methods`, `Lifecycle`) and replace inline control-flow one-liners with explicit `{}` blocks in script logic.
 
 ---
 

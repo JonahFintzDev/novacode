@@ -8,6 +8,9 @@ import TagChipsInput from '@/components/input/TagChipsInput.vue';
 // types
 import type { AgentType } from '@/@types/index';
 
+const AGENT_FALLBACK_ORDER: AgentType[] = ['cursor-agent', 'mistral-vibe', 'claude'];
+
+// -------------------------------------------------- Props --------------------------------------------------
 const props = defineProps<{
   modelValue: boolean;
   loading?: boolean;
@@ -16,10 +19,13 @@ const props = defineProps<{
   claudeAvailable?: boolean;
   /** Whether Cursor can be used for new sessions (authenticated). */
   cursorAvailable?: boolean;
+  /** Whether Mistral Vibe can be used (CLI on PATH and API key in `~/.vibe/.env`). */
+  mistralVibeAvailable?: boolean;
   /** Tag suggestions from existing sessions in the workspace. */
   existingTags?: string[];
 }>();
 
+// -------------------------------------------------- Emits --------------------------------------------------
 const emit = defineEmits<{
   'update:modelValue': [value: boolean];
   create: [
@@ -31,22 +37,68 @@ const emit = defineEmits<{
   ];
 }>();
 
+// -------------------------------------------------- Data --------------------------------------------------
 const name = ref('');
 const formTags = ref<string[]>([]);
 const defaultName = ref('');
 const agentType = ref<AgentType>('cursor-agent');
 
+// -------------------------------------------------- Computed --------------------------------------------------
+// (none)
+
+// -------------------------------------------------- Methods --------------------------------------------------
+function isAgentAvailable(agent: AgentType): boolean {
+  if (agent === 'cursor-agent') {
+    return props.cursorAvailable !== false;
+  }
+  if (agent === 'claude') {
+    return props.claudeAvailable !== false;
+  }
+  if (agent === 'mistral-vibe') {
+    return props.mistralVibeAvailable !== false;
+  }
+  return false;
+}
+
 function computeInitialAgentType(): AgentType {
   const preferred = props.defaultAgentType ?? 'cursor-agent';
-  if (preferred === 'claude' && props.claudeAvailable === false) {
-    return props.cursorAvailable !== false ? 'cursor-agent' : 'claude';
+  if (isAgentAvailable(preferred)) {
+    return preferred;
   }
-  if (preferred === 'cursor-agent' && props.cursorAvailable === false) {
-    return props.claudeAvailable !== false ? 'claude' : 'cursor-agent';
+  for (const fallbackAgentType of AGENT_FALLBACK_ORDER) {
+    if (isAgentAvailable(fallbackAgentType)) {
+      return fallbackAgentType;
+    }
   }
   return preferred;
 }
 
+const close = (): void => {
+  if (!props.loading) {
+    emit('update:modelValue', false);
+  }
+};
+
+const onCreate = (): void => {
+  if (props.loading) {
+    return;
+  }
+  const finalName = name.value.trim() || defaultName.value;
+  const tags = formTags.value;
+  emit('create', {
+    name: finalName,
+    ...(tags.length > 0 ? { tags } : {}),
+    agentType: agentType.value
+  });
+};
+
+function selectAgentType(agent: AgentType): void {
+  if (isAgentAvailable(agent)) {
+    agentType.value = agent;
+  }
+}
+
+// -------------------------------------------------- Lifecycle --------------------------------------------------
 watch(
   () => props.modelValue,
   (open) => {
@@ -58,21 +110,6 @@ watch(
     }
   }
 );
-
-const close = (): void => {
-  if (!props.loading) emit('update:modelValue', false);
-};
-
-const onCreate = (): void => {
-  if (props.loading) return;
-  const finalName = name.value.trim() || defaultName.value;
-  const tags = formTags.value;
-  emit('create', {
-    name: finalName,
-    ...(tags.length > 0 ? { tags } : {}),
-    agentType: agentType.value
-  });
-};
 </script>
 
 <template>
@@ -132,10 +169,12 @@ const onCreate = (): void => {
                 Agent
                 <span class="font-normal opacity-60">(required)</span>
               </label>
-              <div class="inline-flex rounded-lg border border-fg/[0.12] bg-fg/[0.04] p-0.5 gap-1">
+              <div
+                class="grid grid-cols-3 rounded-lg border border-fg/[0.12] bg-fg/[0.04] p-0.5 gap-1"
+              >
                 <button
                   type="button"
-                  class="flex-1 text-xs px-3 py-1.5 rounded-md transition-colors"
+                  class="text-xs px-2 py-1.5 rounded-md transition-colors"
                   :class="
                     agentType === 'cursor-agent'
                       ? 'bg-primary text-white'
@@ -144,13 +183,30 @@ const onCreate = (): void => {
                         : 'text-text-muted hover:text-text-primary hover:bg-fg/[0.06]'
                   "
                   :disabled="props.cursorAvailable === false"
-                  @click="props.cursorAvailable !== false && (agentType = 'cursor-agent')"
+                  title="Cursor Agent"
+                  @click="selectAgentType('cursor-agent')"
                 >
                   Cursor
                 </button>
                 <button
                   type="button"
-                  class="flex-1 text-xs px-3 py-1.5 rounded-md transition-colors"
+                  class="text-xs px-2 py-1.5 rounded-md transition-colors"
+                  :class="
+                    agentType === 'mistral-vibe'
+                      ? 'bg-primary text-white'
+                      : props.mistralVibeAvailable === false
+                        ? 'text-text-muted opacity-40 cursor-not-allowed'
+                        : 'text-text-muted hover:text-text-primary hover:bg-fg/[0.06]'
+                  "
+                  :disabled="props.mistralVibeAvailable === false"
+                  title="Mistral Vibe"
+                  @click="selectAgentType('mistral-vibe')"
+                >
+                  Vibe
+                </button>
+                <button
+                  type="button"
+                  class="text-xs px-2 py-1.5 rounded-md transition-colors"
                   :class="
                     agentType === 'claude'
                       ? 'bg-primary text-white'
@@ -159,7 +215,8 @@ const onCreate = (): void => {
                         : 'text-text-muted hover:text-text-primary hover:bg-fg/[0.06]'
                   "
                   :disabled="props.claudeAvailable === false"
-                  @click="props.claudeAvailable !== false && (agentType = 'claude')"
+                  title="Claude Code"
+                  @click="selectAgentType('claude')"
                 >
                   Claude
                 </button>
@@ -167,7 +224,10 @@ const onCreate = (): void => {
               <p v-if="props.cursorAvailable === false" class="text-[11px] text-text-muted">
                 Cursor is not authenticated. Sign in from Settings.
               </p>
-              <p v-else-if="props.claudeAvailable === false" class="text-[11px] text-text-muted">
+              <p v-if="props.mistralVibeAvailable === false" class="text-[11px] text-text-muted">
+                Mistral Vibe needs the CLI on PATH and an API key under Settings → Mistral Vibe.
+              </p>
+              <p v-if="props.claudeAvailable === false" class="text-[11px] text-text-muted">
                 Claude is not configured for this server or user.
               </p>
             </div>

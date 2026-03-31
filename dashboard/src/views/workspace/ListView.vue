@@ -379,6 +379,10 @@ onMounted((): void => {
                     <span class="material-symbols-outlined">code</span>
                     Cursor
                   </template>
+                  <template v-else-if="workspace.defaultAgentType === 'mistral-vibe'">
+                    <span class="material-symbols-outlined">waves</span>
+                    Mistral Vibe
+                  </template>
                   <template v-else-if="workspace.defaultAgentType === 'claude'">
                     <span class="material-symbols-outlined">chat</span>
                     Claude

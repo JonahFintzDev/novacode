@@ -17,6 +17,8 @@ export const config = {
   port: parseInt(optional('PORT', '3000'), 10),
   cursorCommand: '/root/.local/bin/cursor-agent',
   claudeCommand: 'claude',
+  /** Mistral Vibe CLI (`vibe`). */
+  vibeCommand: optional('VIBE_COMMAND', 'vibe'),
   configDir: '/config',
   /** Root directory on the host; workspace paths are relative to this. */
   workspaceBrowseRoot: '/data-root',
@@ -33,7 +35,8 @@ export const config = {
       'USER',
       'LOGNAME',
       'XDG_CONFIG_HOME',
-      'CURSOR_HOME'
+      'CURSOR_HOME',
+      'VIBE_HOME'
     ];
     for (const key of forward) {
       if (process.env[key]) env[key] = process.env[key]!;
@@ -44,10 +47,14 @@ export const config = {
       }
     }
     env['TERM'] = env['TERM'] || 'xterm-256color';
+
+    // home directories
     env['HOME'] = configDir;
     env['CURSOR_HOME'] = configDir;
+    env['VIBE_HOME'] = configDir + '/.vibe';
     env['CLAUDE_CONFIG_DIR'] = configDir;
     env['XDG_CONFIG_HOME'] = env['XDG_CONFIG_HOME'] || configDir + '/.config';
+
     // workspace-level git identity overrides take precedence over .gitconfig user section
     if (gitOverrides?.name) {
       env['GIT_AUTHOR_NAME'] = gitOverrides.name;
@@ -117,6 +124,25 @@ export function isClaudeAvailable(configDir: string): boolean {
   try {
     const env = { ...process.env, ...config.agentEnv() };
     const result = spawnSync(config.claudeCommand, ['--help'], {
+      encoding: 'utf8',
+      timeout: 5000,
+      cwd: configDir,
+      env,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    if (result.status !== 0) return false;
+    const out = [result.stdout, result.stderr].filter(Boolean).join('\n');
+    return out.trim().length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/** True when the Vibe CLI is on PATH and responds to `--help`. */
+export function isVibeCliAvailable(configDir: string): boolean {
+  try {
+    const env = { ...process.env, ...config.agentEnv() };
+    const result = spawnSync(config.vibeCommand, ['--help'], {
       encoding: 'utf8',
       timeout: 5000,
       cwd: configDir,

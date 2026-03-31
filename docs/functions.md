@@ -8,7 +8,7 @@ This document describes what the application **does today** (backend API, dashbo
 
 ## 1. Product overview
 
-NovaCode is a **self-hosted web application** for managing **AI coding agent** workflows: **Cursor Agent** and **Claude Code**. You organize work in **workspaces** (directories on disk), open **sessions** tied to a workspace and agent, and interact through a **chat UI** (with streaming), **terminal output** where applicable, and supporting tools for **Git**, **files**, and **workspace rules**.
+NovaCode is a **self-hosted web application** for managing **AI coding agent** workflows: **Cursor Agent**, **Claude Code**, and optionally **Mistral Vibe** (`mistral-vibe` agent type). You organize work in **workspaces** (directories on disk), open **sessions** tied to a workspace and agent, and interact through a **chat UI** (with streaming), **terminal output** where applicable, and supporting tools for **Git**, **files**, and **workspace rules**.
 
 Optional features include **scheduled automations**, **role templates**, and **browser push notifications**.
 
@@ -27,7 +27,7 @@ Optional features include **scheduled automations**, **role templates**, and **b
 
 - **Create / list / update / delete** workspaces. Each workspace has:
   - A **display name** and a **path** relative to the host root `/data-root` (where repos are mounted).
-  - Optional **group** label, **color**, **sort order**, **tags** (JSON array), **default agent type** (`cursor-agent` or `claude`), **archived** flag.
+  - Optional **group** label, **color**, **sort order**, **tags** (JSON array), **default agent type** (`cursor-agent`, `claude`, or `mistral-vibe`), **archived** flag.
   - Optional **per-workspace Git identity** (`gitUserName` / `gitUserEmail`) for commits and Git operations.
 - **Browse directories**: API to list directories under the allowed root when picking a workspace path (`/api/workspaces/browse`).
 - **Validation**: Workspace paths must stay under the configured browse root (security boundary).
@@ -38,7 +38,17 @@ Optional features include **scheduled automations**, **role templates**, and **b
 
 - **Create session**: `POST` to create a session in a workspace with a name, optional **tags**, and **agent type** (defaults from workspace or `cursor-agent`).
 - **Cursor Agent**: On creation, the server may run `cursor-agent -f create-chat` in the workspace directory to obtain an external session id stored on the session.
-- **Claude**: Sessions are created without that PTY bootstrap step (Claude Code is used differently in the flow).
+- **Claude** / **Mistral Vibe**: Sessions are created without the Cursor `create-chat` PTY bootstrap.
+- **Claude**: The first prompt run captures `session_id` from Claude’s `stream-json` output and stores it for `--resume` on later turns.
+- **Mistral Vibe**: Prompts run as `vibe --prompt … --output streaming` (newline-delimited JSON, parsed like Cursor). Example: `vibe --prompt "task" --output streaming`. The CLI does **not** return a session id in stdout; after each run the server reads `~/.vibe/logs/session` (prefer that path; else `$VIBE_HOME/logs/session`), picks the latest `session_*` directory deterministically (embedded `YYYYMMDD_HHMMSS` in the folder name when present, otherwise filesystem mtime), and stores the suffix after the final underscore as the external session id for `vibe --resume` on later turns.
+
+**Session id summary**
+
+| Agent | External session id |
+|-------|---------------------|
+| Cursor | From `create-chat` at session creation |
+| Claude | From stream JSON on first prompt |
+| Mistral Vibe | From log folder names after each run (`session_*` under `~/.vibe/logs/session` or `$VIBE_HOME/logs/session`) |
 - **List / get / patch / delete**: Sessions support **rename**, **tags**, **archive**, and can be listed globally or per workspace (including archived where applicable).
 - **Chat history**: Messages are stored in the database (`messageJson` on the session). Session **list** responses omit `messageJson` for size; denormalized **`lastPreviewText`** / **`lastPreviewRole`** (`user` \| `assistant`) are updated when chat is persisted so sidebars can show a last-message snippet without loading full history. On **list** and **global WebSocket snapshot**, sessions missing those fields are **backfilled once** from `message_json` (then persisted) so older threads still show a preview.
 - **Real-time**: WebSocket endpoints for **session** streams and **chat**; separate channels for workspace-level session list updates (create/update/delete, “busy” state for active chat runs).
@@ -50,7 +60,8 @@ Optional features include **scheduled automations**, **role templates**, and **b
 
 - **Streaming chat**: WebSocket connection at `/api/ws/chat/:id` (with token) for streaming agent output and chat events.
 - **Chat engine**: Coordinates **active runs**, subscribers, **prompt dispatch**, cancellation, and persistence of **message history** (including streaming JSON lines from agents).
-- **Workspace rules injection**: When building prompts, the server can prepend content from **workspace rule files** (see §7) so agents follow project-specific instructions.
+- **Workspace rules injection**: When building prompts, the server can prepend content from **workspace rule files** (see §7) for **Claude** and **Mistral Vibe** (Cursor Agent uses its own flags).
+- **Mistral Vibe**: Uses the same Cursor-style stream line handling as **Cursor Agent** for UI aggregation (`agentStreamParser`); the dashboard renderer also normalizes nested stream envelopes, direct `role/content` assistant chunks, and `role: "tool"` outputs so Vibe messages render as chat/tool cards rather than raw JSON. Session folders under the Vibe log path are best-effort — if none are found after a run, a warning is logged and the next turn may run without `--resume`.
 
 ---
 
@@ -103,8 +114,8 @@ Optional features include **scheduled automations**, **role templates**, and **b
 
 - **Git**: Global default `gitUserName` / `gitUserEmail` written to `/config/.gitconfig` (with `safe.directory = *`).
 - **UI**: **Theme** (including **auto theme** and separate dark/light theme presets), **model selection** (e.g. auto vs specific Cursor models).
-- **Agent capabilities**: Endpoints report whether **Claude** CLI is available and **Cursor** is authenticated.
-- **Vibe (Mistral)**: Stored API key in `.vibe/.env` under config dir when configured.
+- **Agent capabilities**: Endpoints report whether **Claude** CLI is available, **Cursor** is authenticated, and **Mistral Vibe** is usable (CLI on `PATH` plus API key in `.vibe/.env` under the config dir).
+- **Vibe (Mistral)**: Stored API key in `.vibe/.env` under config dir when configured; surfaced as `mistralVibeAvailable` with the `vibe` CLI probe.
 - **MCP client config**: External MCP servers (stdio or HTTP) for Cursor / Claude; persisted as `mcp-clients.json` and synced to `.cursor/mcp.json` and `mcpServers` in `.claude.json` (read/write via settings API). **`POST /api/settings/mcp-clients/check`** runs a dry-run (stdio spawn probe, HTTP GET) and returns per-server results.
 - **Claude token**: Optional stored token for Claude authentication.
 - **Cursor login**: Flows that spawn a PTY for `cursor-agent` login and persist auth under `config`.
@@ -146,7 +157,7 @@ Optional features include **scheduled automations**, **role templates**, and **b
 |-------------|------------|
 | API         | Fastify, TypeScript, Prisma, PostgreSQL |
 | Real-time   | `@fastify/websocket`, WebSocket |
-| Agents      | Cursor Agent CLI, Claude Code CLI, `node-pty` |
+| Agents      | Cursor Agent CLI, Claude Code CLI, Mistral Vibe CLI (`vibe`), `node-pty` |
 | Dashboard   | Vue 3, Pinia, Vue Router, Tailwind CSS |
 
 ---

@@ -12,6 +12,7 @@ import {
   setVibeApiKey,
   writeGlobalGitConfig,
   isClaudeAvailable,
+  isVibeCliAvailable,
   readMcpClients,
   writeMcpClients
 } from '../classes/config';
@@ -238,7 +239,8 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
         response: {
           200: Type.Object({
             cursorAvailable: Type.Boolean(),
-            claudeAvailable: Type.Boolean()
+            claudeAvailable: Type.Boolean(),
+            mistralVibeAvailable: Type.Boolean()
           })
         }
       }
@@ -248,9 +250,12 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
       const cursorAvailable = cursorAuthenticated();
       const claudeCliAvailable = isClaudeAvailable(config.configDir);
       const claudeConfigured = !!user?.claudeToken;
+      const vibeCliOk = isVibeCliAvailable(config.configDir);
+      const vibeKeyOk = getVibeApiKeyStatus(config.configDir).configured;
       return {
         cursorAvailable,
-        claudeAvailable: claudeCliAvailable && claudeConfigured
+        claudeAvailable: claudeCliAvailable && claudeConfigured,
+        mistralVibeAvailable: vibeCliOk && vibeKeyOk
       };
     }
   );

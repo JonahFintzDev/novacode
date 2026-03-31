@@ -111,6 +111,12 @@ function formatInterval(minutes: number): string {
   return `${minutes / 10080}w`;
 }
 
+function agentTypeLabel(t: AgentType): string {
+  if (t === 'claude') return 'Claude';
+  if (t === 'mistral-vibe') return 'Mistral Vibe';
+  return 'Cursor';
+}
+
 function formatNextRun(automation: Automation): string {
   if (!automation.enabled) return 'Disabled';
   if (!automation.nextRunAt) return '—';
@@ -502,7 +508,7 @@ onUnmounted(() => {
                     <span
                       class="text-[10px] px-1.5 py-0.5 rounded bg-fg/10 text-text-muted font-medium"
                     >
-                      {{ a.agentType === 'claude' ? 'Claude' : 'Cursor' }}
+                      {{ agentTypeLabel(a.agentType) }}
                     </span>
                   </div>
                   <div class="flex items-center gap-3 mt-1 text-xs text-text-muted flex-wrap">
@@ -605,7 +611,7 @@ onUnmounted(() => {
                         {{ a.enabled ? 'active' : 'disabled' }}
                       </span>
                       <span class="text-[10px] px-1.5 py-0.5 rounded bg-fg/10 text-text-muted font-medium">
-                        {{ a.agentType === 'claude' ? 'Claude' : 'Cursor' }}
+                        {{ agentTypeLabel(a.agentType) }}
                       </span>
                     </div>
                   </div>
@@ -851,6 +857,7 @@ onUnmounted(() => {
               :disabled="isCreating"
             >
               <option value="cursor-agent">Cursor</option>
+              <option value="mistral-vibe">Mistral Vibe</option>
               <option value="claude">Claude</option>
             </select>
           </div>
@@ -933,6 +940,7 @@ onUnmounted(() => {
               :disabled="isSavingEdit"
             >
               <option value="cursor-agent">Cursor</option>
+              <option value="mistral-vibe">Mistral Vibe</option>
               <option value="claude">Claude</option>
             </select>
           </div>

@@ -153,11 +153,17 @@ export const settingsApi = {
   > => http.get<{ models: CursorModelOption[]; fromCache: boolean }>('/settings/cursor-models'),
 
   getAgentCapabilities: (): ReturnType<
-    typeof http.get<{ cursorAvailable: boolean; claudeAvailable: boolean }>
+    typeof http.get<{
+      cursorAvailable: boolean;
+      claudeAvailable: boolean;
+      mistralVibeAvailable: boolean;
+    }>
   > =>
-    http.get<{ cursorAvailable: boolean; claudeAvailable: boolean }>(
-      '/settings/agent-capabilities'
-    ),
+    http.get<{
+      cursorAvailable: boolean;
+      claudeAvailable: boolean;
+      mistralVibeAvailable: boolean;
+    }>('/settings/agent-capabilities'),
 
   getVibeApiKeyStatus: (): ReturnType<typeof http.get<{ configured: boolean }>> =>
     http.get<{ configured: boolean }>('/settings/vibe-api-key'),

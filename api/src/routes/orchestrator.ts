@@ -316,7 +316,7 @@ export async function orchestratorRoutes(fastify: FastifyInstance): Promise<void
       });
       if (tempSessionResult.error || !tempSessionResult.session) {
         return reply.status(502).send({
-          error: 'Failed to create cursor-agent session for decomposition',
+          error: 'Failed to create agent session for decomposition',
           details: tempSessionResult.error
         });
       }

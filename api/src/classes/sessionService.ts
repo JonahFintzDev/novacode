@@ -46,7 +46,7 @@ export async function createSessionWithAgent(
     agentType
   });
 
-  // claude sessions are stateless CLI calls; cursor-agent needs create-chat to obtain a session id
+  // claude / mistral-vibe: no create-chat bootstrap; cursor-agent runs create-chat for an external session id
   let sessionId: string | null = null;
   if (agentType === 'cursor-agent') {
     try {

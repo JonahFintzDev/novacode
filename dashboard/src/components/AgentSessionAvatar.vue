@@ -1,5 +1,8 @@
 <script setup lang="ts">
+// node_modules
 import { computed } from 'vue';
+
+// types
 import type { AgentType } from '@/@types/index';
 
 /** Served from `public/icons/` (bundled at build; not external URLs). */
@@ -9,20 +12,54 @@ function iconUrl(name: 'cursor' | 'claude'): string {
 
 const CURSOR_ICON = iconUrl('cursor');
 const CLAUDE_ICON = iconUrl('claude');
+const VIBE_ICON = 'https://console.mistral.ai/_next/static/media/vibe-logo.64fbadbe.svg';
 
 const props = defineProps<{
   agentType: AgentType;
 }>();
 
-const isClaude = computed(() => props.agentType === 'claude');
-const iconSrc = computed(() => (isClaude.value ? CLAUDE_ICON : CURSOR_ICON));
-const iconLabel = computed(() => (isClaude.value ? 'Claude' : 'Cursor'));
+// -------------------------------------------------- Computed --------------------------------------------------
+const variant = computed(() => {
+  if (props.agentType === 'claude') {
+    return 'claude' as const;
+  }
+  if (props.agentType === 'mistral-vibe') {
+    return 'vibe' as const;
+  }
+  return 'cursor' as const;
+});
+
+const iconSrc = computed(() => {
+  if (variant.value === 'claude') {
+    return CLAUDE_ICON;
+  }
+  if (variant.value === 'vibe') {
+    return VIBE_ICON;
+  }
+  return CURSOR_ICON;
+});
+
+const iconLabel = computed(() => {
+  if (variant.value === 'claude') {
+    return 'Claude';
+  }
+  if (variant.value === 'vibe') {
+    return 'Mistral Vibe';
+  }
+  return 'Cursor';
+});
 </script>
 
 <template>
   <div
     class="w-11 h-11 rounded-full shrink-0 flex items-center justify-center overflow-hidden border border-fg/10 p-1.5"
-    :class="[isClaude ? 'bg-orange-500/12' : 'bg-white avatar-cursor-wrap']"
+    :class="[
+      variant === 'claude'
+        ? 'bg-orange-500/12'
+        : variant === 'vibe'
+          ? 'bg-emerald-500/12'
+          : 'bg-white avatar-cursor-wrap'
+    ]"
   >
     <img
       :src="iconSrc"

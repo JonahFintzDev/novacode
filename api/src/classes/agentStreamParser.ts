@@ -29,15 +29,38 @@ export function parseAgentStream(
 ): void {
   if (agentType === 'claude') {
     parseClaudeStream(stream, onEventLine, onSessionId);
-  } else {
-    // Default to cursor-agent semantics for backwards compatibility.
+  } else if (agentType === 'cursor-agent') {
     parseCursorStream(stream, onEventLine);
+  } else if (agentType === 'mistral-vibe') {
+    parseMistralVibeStream(stream, onEventLine);
   }
 }
 
 // --------------------------------------------- Cursor Parsing ---------------------------------------------
-
 function parseCursorStream(stream: Readable, onEventLine: AgentStreamEventHandler): void {
+  let buffer = '';
+
+  stream.on('data', (chunk: Buffer | string) => {
+    buffer += chunk.toString();
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+    for (const line of lines) {
+      if (line.trim()) {
+        onEventLine(line);
+      }
+    }
+  });
+
+  stream.on('end', () => {
+    const final = buffer.trim();
+    if (final) {
+      onEventLine(final);
+    }
+  });
+}
+
+// --------------------------------------------- Mistral Vibe Parsing ---------------------------------------------
+function parseMistralVibeStream(stream: Readable, onEventLine: AgentStreamEventHandler): void {
   let buffer = '';
 
   stream.on('data', (chunk: Buffer | string) => {

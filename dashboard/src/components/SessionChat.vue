@@ -315,6 +315,8 @@ const streamingRawLines: string[] = [];
 /** Cursor `thinking` / `delta` chunks — shown for the whole busy stream; cleared when the run ends. Not in history. */
 const streamingThinkingText = ref('');
 const notifiedTodoIds = new Set<string>();
+const seenVibeMessageIds = new Set<string>();
+const seenVibeToolCallIds = new Set<string>();
 
 // ── Tool call helpers ─────────────────────────────────────────────────────────
 const MAX_GLOB_FILES_TO_SHOW = 10;
@@ -327,6 +329,16 @@ const TOOL_META: Record<string, { name: string; icon: string }> = {
   shellToolCall: { name: 'Shell', icon: 'terminal' },
   deleteToolCall: { name: 'Delete', icon: 'delete' },
   updateTodosToolCall: { name: 'Todos', icon: 'checklist' }
+};
+
+const VIBE_TOOL_META: Record<string, { name: string; icon: string }> = {
+  write_file: { name: 'Write', icon: 'edit' },
+  edit_file: { name: 'Edit', icon: 'edit' },
+  read_file: { name: 'Read', icon: 'description' },
+  list_directory: { name: 'Glob', icon: 'travel_explore' },
+  search_files: { name: 'Grep', icon: 'manage_search' },
+  run_command: { name: 'Shell', icon: 'terminal' },
+  delete_file: { name: 'Delete', icon: 'delete' }
 };
 
 function getToolSummary(toolCallName: string, toolCallObj: Record<string, unknown>): string {
@@ -388,6 +400,19 @@ function processEventLine(
     return;
   }
 
+  // Some providers (e.g. Vibe) can nest real events inside `{ type: "stream", data: "<json>" }`.
+  // Unwrap those envelopes so the display parser can handle a consistent event shape.
+  for (let i = 0; i < 3; i += 1) {
+    if (event.type !== 'stream' || typeof event.data !== 'string') break;
+    const nested = event.data.trim();
+    if (!nested) return;
+    try {
+      event = JSON.parse(nested) as Record<string, unknown>;
+    } catch {
+      break;
+    }
+  }
+
   // Ephemeral thinking stream (Cursor stream-json) — never persisted as display items.
   if (event.type === 'thinking') {
     if (
@@ -401,26 +426,56 @@ function processEventLine(
     return;
   }
 
-  if (
-    event.type === 'assistant' &&
-    Array.isArray((event.message as Record<string, unknown>)?.content)
-  ) {
+  let assistantText = '';
+  if (event.type === 'assistant' && Array.isArray((event.message as Record<string, unknown>)?.content)) {
     const content = (event.message as Record<string, unknown>).content as Array<{
       type: string;
       text?: string;
     }>;
-    const text = content
+    assistantText = content
       .filter((b) => b.type === 'text')
       .map((b) => b.text ?? '')
       .join('');
-    // Cursor stream-json sometimes emits assistant chunks that are only newlines/spaces; skip those
-    // so we do not render empty markdown bubbles between tool calls.
-    if (!text.trim()) return;
+  } else if (
+    (event.role === 'assistant' || event.type === 'assistant') &&
+    typeof event.content === 'string'
+  ) {
+    assistantText = event.content;
+  }
+
+  if (assistantText) {
+    // Skip whitespace-only chunks so we do not render empty markdown bubbles between tool calls.
+    if (!assistantText.trim()) return;
     const last = items[items.length - 1];
     if (last?.kind === 'text') {
-      last.text = (last.text ?? '') + text;
+      last.text = (last.text ?? '') + assistantText;
     } else {
-      items.push({ kind: 'text', text });
+      items.push({ kind: 'text', text: assistantText });
+    }
+  } else if (event.role === 'tool' && typeof event.content === 'string') {
+    const toolNameRaw = typeof event.name === 'string' ? event.name : 'tool';
+    const meta = VIBE_TOOL_META[toolNameRaw] ?? { name: toolNameRaw, icon: 'build' };
+    const summary = event.content.replace(/\s+/g, ' ').trim();
+    const toolSummary = summary.length > 220 ? `${summary.slice(0, 220)}...` : summary;
+    const callId =
+      typeof event.tool_call_id === 'string' && event.tool_call_id
+        ? event.tool_call_id
+        : `vibe-${toolNameRaw}-${items.length}`;
+    const existing = items.find((i) => i.kind === 'tool' && i.callId === callId);
+    if (existing && existing.kind === 'tool') {
+      existing.toolSummary = toolSummary || existing.toolSummary;
+      existing.status = 'success';
+      existing.toolName = meta.name;
+      existing.toolIcon = meta.icon;
+    } else {
+      items.push({
+        kind: 'tool',
+        callId,
+        toolName: meta.name,
+        toolIcon: meta.icon,
+        toolSummary,
+        status: 'success'
+      });
     }
   } else if (event.type === 'tool_call') {
     const toolCallObj = (event.tool_call ?? {}) as Record<string, unknown>;
@@ -485,6 +540,62 @@ function parseEventsToItems(events: string[]): DisplayItem[] {
   const items: DisplayItem[] = [];
   for (const line of events) processEventLine(line, items);
   return items;
+}
+
+function parseNestedEvent(line: string): Record<string, unknown> | null {
+  let event: Record<string, unknown>;
+  try {
+    event = JSON.parse(line) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  for (let i = 0; i < 3; i += 1) {
+    if (event.type !== 'stream' || typeof event.data !== 'string') break;
+    const nested = event.data.trim();
+    if (!nested) return null;
+    try {
+      event = JSON.parse(nested) as Record<string, unknown>;
+    } catch {
+      break;
+    }
+  }
+  return event;
+}
+
+function indexSeenVibeIdsFromEvents(events: string[] | undefined): void {
+  if (!events?.length) return;
+  for (const line of events) {
+    const event = parseNestedEvent(line);
+    if (!event) continue;
+    if (typeof event.message_id === 'string' && event.message_id) {
+      seenVibeMessageIds.add(event.message_id);
+    }
+    if (
+      (event.role === 'tool' || event.role === 'assistant') &&
+      typeof event.tool_call_id === 'string' &&
+      event.tool_call_id
+    ) {
+      seenVibeToolCallIds.add(event.tool_call_id);
+    }
+  }
+}
+
+function shouldSkipDuplicateVibeEventLine(line: string): boolean {
+  const event = parseNestedEvent(line);
+  if (!event) return false;
+  if (typeof event.message_id === 'string' && event.message_id) {
+    if (seenVibeMessageIds.has(event.message_id)) return true;
+    seenVibeMessageIds.add(event.message_id);
+  }
+  if (
+    (event.role === 'tool' || event.role === 'assistant') &&
+    typeof event.tool_call_id === 'string' &&
+    event.tool_call_id
+  ) {
+    if (seenVibeToolCallIds.has(event.tool_call_id)) return true;
+    seenVibeToolCallIds.add(event.tool_call_id);
+  }
+  return false;
 }
 
 function latestAssistantText(items: DisplayItem[]): string {
@@ -575,6 +686,9 @@ function connectChatWs() {
 
       if (msg.type === 'history') {
         messages.value = msg.messages ?? [];
+        seenVibeMessageIds.clear();
+        seenVibeToolCallIds.clear();
+        for (const m of messages.value) indexSeenVibeIdsFromEvents(m.events);
         queuedPrompts.value = msg.queue ?? [];
         hasMore.value = msg.hasMore ?? false;
         streamingItems.value = [];
@@ -586,7 +700,9 @@ function connectChatWs() {
       } else if (msg.type === 'history-page') {
         const container = messagesEl.value;
         const oldScrollHeight = container?.scrollHeight ?? 0;
-        messages.value = [...(msg.messages ?? []), ...messages.value];
+        const older = msg.messages ?? [];
+        for (const m of older) indexSeenVibeIdsFromEvents(m.events);
+        messages.value = [...older, ...messages.value];
         hasMore.value = msg.hasMore ?? false;
         loadingMore.value = false;
         nextTick(() => {
@@ -610,6 +726,7 @@ function connectChatWs() {
       } else if (msg.type === 'stream') {
         isStreaming.value = true;
         const line = msg.data ?? '';
+        if (shouldSkipDuplicateVibeEventLine(line)) return;
         streamingRawLines.push(line);
         processEventLine(line, streamingItems.value, { liveThinking: true });
         for (const item of streamingItems.value) {
@@ -837,6 +954,8 @@ watch(
     if (!newId || newId === oldId) return;
     // reset chat state for new session
     messages.value = [];
+    seenVibeMessageIds.clear();
+    seenVibeToolCallIds.clear();
     streamingItems.value = [];
     streamingRawLines.length = 0;
     streamingThinkingText.value = '';

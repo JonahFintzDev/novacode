@@ -24,11 +24,13 @@ import { subtasksFromStoredJson } from '@/utils/orchestratorPayload';
 // -------------------------------------------------- Const --------------------------------------------------
 const AGENT_TYPE_TEXT = {
   claude: 'Claude',
-  'cursor-agent': 'Cursor'
+  'cursor-agent': 'Cursor',
+  'mistral-vibe': 'Mistral Vibe'
 };
 const AGENT_TYPE_COLOR = {
   claude: 'bg-orange-500/15! text-orange-400! border-orange-500/20!',
-  'cursor-agent': 'bg-violet-500/15! text-violet-400! border-violet-500/20!'
+  'cursor-agent': 'bg-violet-500/15! text-violet-400! border-violet-500/20!',
+  'mistral-vibe': 'bg-emerald-500/15! text-emerald-400! border-emerald-500/20!'
 };
 // -------------------------------------------------- Data --------------------------------------------------
 
@@ -116,6 +118,7 @@ const activeSessionId = computed((): string | null =>
 
 const claudeAvailable = ref(false);
 const cursorAvailable = ref(false);
+const mistralVibeAvailable = ref(false);
 
 const activeFilter = ref<string | null>(null);
 
@@ -498,9 +501,11 @@ const loadAgentCapabilities = async (): Promise<void> => {
     const { data } = await settingsApi.getAgentCapabilities();
     claudeAvailable.value = data.claudeAvailable;
     cursorAvailable.value = data.cursorAvailable;
+    mistralVibeAvailable.value = data.mistralVibeAvailable;
   } catch {
     claudeAvailable.value = false;
     cursorAvailable.value = false;
+    mistralVibeAvailable.value = false;
   }
 };
 
@@ -566,6 +571,7 @@ const createOrchestrator = async (payload: {
 
 function isAgentDisabled(type: AgentType): boolean {
   if (type === 'claude') return !claudeAvailable.value;
+  if (type === 'mistral-vibe') return !mistralVibeAvailable.value;
   return !cursorAvailable.value;
 }
 
@@ -1620,6 +1626,7 @@ onBeforeUnmount(() => {
     :default-agent-type="(workspace && workspace.defaultAgentType) || null"
     :claude-available="claudeAvailable"
     :cursor-available="cursorAvailable"
+    :mistral-vibe-available="mistralVibeAvailable"
     :existing-tags="sessionTags"
     @create="createSession"
   />
@@ -1630,6 +1637,7 @@ onBeforeUnmount(() => {
     :default-agent-type="(workspace && workspace.defaultAgentType) || null"
     :claude-available="claudeAvailable"
     :cursor-available="cursorAvailable"
+    :mistral-vibe-available="mistralVibeAvailable"
     @create="createOrchestrator"
   />
 </template>

@@ -9,6 +9,7 @@ import { db } from './database';
 import { config } from './config';
 import { isWorkspaceRuleHiddenFromUi } from './workspaceRules';
 import { parseAgentStream } from './agentStreamParser';
+import { resolveVibeSessionIdFromFilesystemLogs } from './mistralVibe';
 import { sendTaskDonePush } from './push';
 import { computeLastListPreview, extractLastAssistantText } from './chatPreview';
 import { broadcastSessionListUpsert } from './sessionListBroadcast';
@@ -51,11 +52,15 @@ export function isSessionBusy(sessionId: string): boolean {
   return activeRuns.has(sessionId);
 }
 
-export function subscribeBusy(handler: (sessionId: string, workspaceId: string, busy: boolean) => void): void {
+export function subscribeBusy(
+  handler: (sessionId: string, workspaceId: string, busy: boolean) => void
+): void {
   busySubscribers.add(handler);
 }
 
-export function unsubscribeBusy(handler: (sessionId: string, workspaceId: string, busy: boolean) => void): void {
+export function unsubscribeBusy(
+  handler: (sessionId: string, workspaceId: string, busy: boolean) => void
+): void {
   busySubscribers.delete(handler);
 }
 
@@ -213,7 +218,8 @@ export async function dispatchPrompt(opts: DispatchPromptOpts): Promise<{ error?
   const assistantEvents: string[] = [];
 
   let proc: ChildProcess;
-  const procAgentLabel = agentType === 'claude' ? 'claude' : 'cursor-agent';
+  const procAgentLabel =
+    agentType === 'claude' ? 'claude' : agentType === 'mistral-vibe' ? 'vibe' : 'cursor-agent';
 
   if (agentType === 'claude') {
     const rulesPrefix = await buildWorkspaceRulesPrefix(workspacePath);
@@ -251,6 +257,21 @@ export async function dispatchPrompt(opts: DispatchPromptOpts): Promise<{ error?
       env: claudeEnv,
       stdio: ['ignore', 'pipe', 'pipe']
     });
+  } else if (agentType === 'mistral-vibe') {
+    const rulesPrefix = await buildWorkspaceRulesPrefix(workspacePath);
+    const vibePrompt = rulesPrefix
+      ? `${rulesPrefix}\n\nUser request:\n${effectiveText}`
+      : effectiveText;
+    const spawnArgs: string[] = ['--prompt', vibePrompt, '--output', 'streaming'];
+    if (session.sessionId) {
+      spawnArgs.push('--resume', session.sessionId);
+    }
+    proc = spawn(config.vibeCommand, spawnArgs, {
+      cwd: workspacePath,
+      env: config.agentEnv(),
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    console.log('[chatEngine] spawned vibe', config.vibeCommand, spawnArgs.length, 'args');
   } else {
     console.log('[chatEngine] sending message to cursor-agent', effectiveText);
 
@@ -318,6 +339,7 @@ export async function dispatchPrompt(opts: DispatchPromptOpts): Promise<{ error?
       agentType,
       proc.stdout,
       (line: string) => {
+        console.log('[chatEngine] onStream', line);
         assistantEvents.push(line);
         run.bufferedLines.push(line);
         broadcast((sub) => sub.onStream(line));
@@ -355,8 +377,23 @@ export async function dispatchPrompt(opts: DispatchPromptOpts): Promise<{ error?
 
     const previewDone = computeLastListPreview(currentMessages);
     try {
+      let vibeExternalId: string | undefined;
+      if (agentType === 'mistral-vibe') {
+        const vibeId = await resolveVibeSessionIdFromFilesystemLogs(config.agentEnv());
+        if (vibeId) {
+          vibeExternalId = vibeId;
+        } else {
+          console.warn(
+            '[chatEngine] Could not resolve Mistral Vibe session id from log dirs (~/.vibe/logs/session or $VIBE_HOME/logs/session); resume on next turn may not apply.'
+          );
+        }
+      }
+
       await db.updateSession(sessionId, {
         messageJson: JSON.stringify(currentMessages),
+        ...(vibeExternalId && vibeExternalId !== session.sessionId
+          ? { sessionId: vibeExternalId }
+          : {}),
         ...(previewDone
           ? {
               lastPreviewText: previewDone.lastPreviewText,

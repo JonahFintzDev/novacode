@@ -64,6 +64,7 @@ const showNewSessionModal = ref(false);
 const isSubmittingSession = ref(false);
 const claudeAvailable = ref(false);
 const cursorAvailable = ref(false);
+const mistralVibeAvailable = ref(false);
 
 async function ensureWorkspaceLoaded(): Promise<void> {
   if (store.workspaces.some((w) => w.id === workspaceId.value)) return;
@@ -75,9 +76,11 @@ async function loadAgentCapabilities(): Promise<void> {
     const { data } = await settingsApi.getAgentCapabilities();
     claudeAvailable.value = data.claudeAvailable;
     cursorAvailable.value = data.cursorAvailable;
+    mistralVibeAvailable.value = data.mistralVibeAvailable;
   } catch {
     claudeAvailable.value = false;
     cursorAvailable.value = false;
+    mistralVibeAvailable.value = false;
   }
 }
 
@@ -233,6 +236,7 @@ onUnmounted(() => {
     :default-agent-type="(workspace && workspace.defaultAgentType) || null"
     :claude-available="claudeAvailable"
     :cursor-available="cursorAvailable"
+    :mistral-vibe-available="mistralVibeAvailable"
     :existing-tags="sessionTags"
     @create="createSession"
   />
