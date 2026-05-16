@@ -6,13 +6,14 @@ import { computed } from 'vue';
 import type { AgentType } from '@/@types/index';
 
 /** Served from `public/icons/` (bundled at build; not external URLs). */
-function iconUrl(name: 'cursor' | 'claude' | 'vibe'): string {
+function iconUrl(name: 'cursor' | 'claude' | 'vibe' | 'opencode'): string {
   return `${import.meta.env.BASE_URL}icons/${name}.svg`;
 }
 
 const CURSOR_ICON = iconUrl('cursor');
 const CLAUDE_ICON = iconUrl('claude');
 const VIBE_ICON = iconUrl('vibe');
+const OPENCODE_ICON = iconUrl('opencode');
 
 const props = defineProps<{
   agentType: AgentType;
@@ -26,6 +27,9 @@ const variant = computed(() => {
   if (props.agentType === 'mistral-vibe') {
     return 'vibe' as const;
   }
+  if (props.agentType === 'open-code') {
+    return 'opencode' as const;
+  }
   return 'cursor' as const;
 });
 
@@ -36,6 +40,9 @@ const iconSrc = computed(() => {
   if (variant.value === 'vibe') {
     return VIBE_ICON;
   }
+  if (variant.value === 'opencode') {
+    return OPENCODE_ICON;
+  }
   return CURSOR_ICON;
 });
 
@@ -45,6 +52,9 @@ const iconLabel = computed(() => {
   }
   if (variant.value === 'vibe') {
     return 'Mistral Vibe';
+  }
+  if (variant.value === 'opencode') {
+    return 'OpenCode';
   }
   return 'Cursor';
 });
@@ -58,7 +68,9 @@ const iconLabel = computed(() => {
         ? 'bg-orange-500/12'
         : variant === 'vibe'
           ? 'bg-emerald-500/12'
-          : 'bg-white avatar-cursor-wrap'
+          : variant === 'opencode'
+            ? 'bg-cyan-500/12'
+            : 'bg-white avatar-cursor-wrap'
     ]"
   >
     <img

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // node_modules
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 // components
 import TagChipsInput from '@/components/input/TagChipsInput.vue';
@@ -8,7 +8,7 @@ import TagChipsInput from '@/components/input/TagChipsInput.vue';
 // types
 import type { AgentType } from '@/@types/index';
 
-const AGENT_FALLBACK_ORDER: AgentType[] = ['cursor-agent', 'mistral-vibe', 'claude'];
+const AGENT_FALLBACK_ORDER: AgentType[] = ['cursor-agent', 'mistral-vibe', 'claude', 'open-code'];
 
 // -------------------------------------------------- Props --------------------------------------------------
 const props = defineProps<{
@@ -21,6 +21,8 @@ const props = defineProps<{
   cursorAvailable?: boolean;
   /** Whether Mistral Vibe can be used (CLI on PATH and API key in `~/.vibe/.env`). */
   mistralVibeAvailable?: boolean;
+  /** Whether OpenCode can be used (CLI on PATH and ACP server available). */
+  openCodeAvailable?: boolean;
   /** Tag suggestions from existing sessions in the workspace. */
   existingTags?: string[];
 }>();
@@ -44,7 +46,16 @@ const defaultName = ref('');
 const agentType = ref<AgentType>('cursor-agent');
 
 // -------------------------------------------------- Computed --------------------------------------------------
-// (none)
+const availableAgents = computed(() => {
+  const agents: AgentType[] = [];
+  if (props.cursorAvailable !== false) agents.push('cursor-agent');
+  if (props.mistralVibeAvailable !== false) agents.push('mistral-vibe');
+  if (props.claudeAvailable !== false) agents.push('claude');
+  if (props.openCodeAvailable !== false) agents.push('open-code');
+  return agents;
+});
+
+const gridColsClass = computed(() => `grid-cols-${Math.min(availableAgents.value.length, 3)}`);
 
 // -------------------------------------------------- Methods --------------------------------------------------
 function isAgentAvailable(agent: AgentType): boolean {
@@ -56,6 +67,9 @@ function isAgentAvailable(agent: AgentType): boolean {
   }
   if (agent === 'mistral-vibe') {
     return props.mistralVibeAvailable !== false;
+  }
+  if (agent === 'open-code') {
+    return props.openCodeAvailable !== false;
   }
   return false;
 }
@@ -70,7 +84,8 @@ function computeInitialAgentType(): AgentType {
       return fallbackAgentType;
     }
   }
-  return preferred;
+  // Fallback to first available if preferred is not available
+  return availableAgents.value[0] ?? preferred;
 }
 
 const close = (): void => {
@@ -170,65 +185,23 @@ watch(
                 <span class="font-normal opacity-60">(required)</span>
               </label>
               <div
-                class="grid grid-cols-3 rounded-lg border border-fg/[0.12] bg-fg/[0.04] p-0.5 gap-1"
+                class="grid rounded-lg border border-fg/[0.12] bg-fg/[0.04] p-0.5 gap-1"
+                :class="gridColsClass"
               >
                 <button
+                  v-for="agent in availableAgents"
+                  :key="agent"
                   type="button"
-                  class="text-xs px-2 py-1.5 rounded-md transition-colors"
-                  :class="
-                    agentType === 'cursor-agent'
-                      ? 'bg-primary text-white'
-                      : props.cursorAvailable === false
-                        ? 'text-text-muted opacity-40 cursor-not-allowed'
-                        : 'text-text-muted hover:text-text-primary hover:bg-fg/[0.06]'
-                  "
-                  :disabled="props.cursorAvailable === false"
-                  title="Cursor Agent"
-                  @click="selectAgentType('cursor-agent')"
+                  class="text-xs px-2 py-1.5 rounded-md transition-colors text-text-muted hover:text-text-primary hover:bg-fg/[0.06]"
+                  :class="{ 'bg-primary text-white': agentType === agent }"
+                  :title="agent === 'cursor-agent' ? 'Cursor Agent' : agent === 'mistral-vibe' ? 'Mistral Vibe' : agent === 'claude' ? 'Claude Code' : 'OpenCode'"
+                  @click="selectAgentType(agent)"
                 >
-                  Cursor
-                </button>
-                <button
-                  type="button"
-                  class="text-xs px-2 py-1.5 rounded-md transition-colors"
-                  :class="
-                    agentType === 'mistral-vibe'
-                      ? 'bg-primary text-white'
-                      : props.mistralVibeAvailable === false
-                        ? 'text-text-muted opacity-40 cursor-not-allowed'
-                        : 'text-text-muted hover:text-text-primary hover:bg-fg/[0.06]'
-                  "
-                  :disabled="props.mistralVibeAvailable === false"
-                  title="Mistral Vibe"
-                  @click="selectAgentType('mistral-vibe')"
-                >
-                  Vibe
-                </button>
-                <button
-                  type="button"
-                  class="text-xs px-2 py-1.5 rounded-md transition-colors"
-                  :class="
-                    agentType === 'claude'
-                      ? 'bg-primary text-white'
-                      : props.claudeAvailable === false
-                        ? 'text-text-muted opacity-40 cursor-not-allowed'
-                        : 'text-text-muted hover:text-text-primary hover:bg-fg/[0.06]'
-                  "
-                  :disabled="props.claudeAvailable === false"
-                  title="Claude Code"
-                  @click="selectAgentType('claude')"
-                >
-                  Claude
+                  {{ agent === 'cursor-agent' ? 'Cursor' : agent === 'mistral-vibe' ? 'Vibe' : agent === 'claude' ? 'Claude' : 'OpenCode' }}
                 </button>
               </div>
-              <p v-if="props.cursorAvailable === false" class="text-[11px] text-text-muted">
-                Cursor is not authenticated. Sign in from Settings.
-              </p>
-              <p v-if="props.mistralVibeAvailable === false" class="text-[11px] text-text-muted">
-                Mistral Vibe needs the CLI on PATH and an API key under Settings → Mistral Vibe.
-              </p>
-              <p v-if="props.claudeAvailable === false" class="text-[11px] text-text-muted">
-                Claude is not configured for this server or user.
+              <p v-if="availableAgents.length === 0" class="text-[11px] text-warning">
+                No agents available. Configure Cursor, Mistral Vibe, or Claude in Settings.
               </p>
             </div>
           </div>

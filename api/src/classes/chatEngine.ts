@@ -10,6 +10,7 @@ import { isWorkspaceRuleHiddenFromUi } from './workspaceRules';
 import { runClaudeAcp, cancelClaudeAcp } from './claudeAcp';
 import { runVibeAcp, cancelVibeAcp } from './vibeAcp';
 import { runCursorAcp, cancelCursorAcp } from './cursorAcp';
+import { runOpenCodeAcp, cancelOpenCodeAcp } from './openCodeAcp';
 import { sendTaskDonePush } from './push';
 import { computeLastListPreview } from './chatPreview';
 import { extractStreamNotificationPreview } from './chatStreamPreviewFromEvents';
@@ -211,7 +212,7 @@ export async function dispatchPrompt(opts: DispatchPromptOpts): Promise<{ error?
 
   const agentType: AgentType = (session.agentType as AgentType | null) ?? 'claude';
 
-  if (agentType !== 'claude' && agentType !== 'mistral-vibe' && agentType !== 'cursor-agent') {
+  if (agentType !== 'claude' && agentType !== 'mistral-vibe' && agentType !== 'cursor-agent' && agentType !== 'open-code') {
     return { error: `Agent type '${agentType}' is not yet supported via ACP. Coming soon.` };
   }
 
@@ -280,6 +281,8 @@ export async function dispatchPrompt(opts: DispatchPromptOpts): Promise<{ error?
         cancelVibeAcp(sessionId);
       } else if (agentType === 'cursor-agent') {
         cancelCursorAcp(sessionId);
+      } else if (agentType === 'open-code') {
+        cancelOpenCodeAcp(sessionId);
       } else if (currentAcpSessionId) {
         cancelClaudeAcp(currentAcpSessionId);
       }
@@ -323,6 +326,12 @@ export async function dispatchPrompt(opts: DispatchPromptOpts): Promise<{ error?
       );
     } else if (agentType === 'cursor-agent') {
       result = await runCursorAcp(
+        { acpSessionId: currentAcpSessionId, cwd: workspacePath, promptText: agentPrompt },
+        onEvent,
+        sessionId
+      );
+    } else if (agentType === 'open-code') {
+      result = await runOpenCodeAcp(
         { acpSessionId: currentAcpSessionId, cwd: workspacePath, promptText: agentPrompt },
         onEvent,
         sessionId

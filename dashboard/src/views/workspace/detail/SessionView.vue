@@ -30,12 +30,14 @@ const props = defineProps<{
 const AGENT_TYPE_TEXT = {
   claude: 'Claude',
   'cursor-agent': 'Cursor',
-  'mistral-vibe': 'Mistral Vibe'
+  'mistral-vibe': 'Mistral Vibe',
+  'open-code': 'OpenCode'
 };
 const AGENT_TYPE_COLOR = {
   claude: 'bg-orange-500/15! text-orange-400! border-orange-500/20!',
   'cursor-agent': 'bg-violet-500/15! text-violet-400! border-violet-500/20!',
-  'mistral-vibe': 'bg-emerald-500/15! text-emerald-400! border-emerald-500/20!'
+  'mistral-vibe': 'bg-emerald-500/15! text-emerald-400! border-emerald-500/20!',
+  'open-code': 'bg-cyan-500/15! text-cyan-400! border-cyan-500/20!'
 };
 
 // -------------------------------------------------- Store --------------------------------------------------
@@ -468,16 +470,20 @@ const ensureData = async (): Promise<void> => {
   await store.fetchAll();
 };
 
+const bOpenCodeAvailable = ref(false);
+
 const loadAgentCapabilities = async (): Promise<void> => {
   try {
     const { data } = await settingsApi.getAgentCapabilities();
     bClaudeAvailable.value = data.claudeAvailable;
     bCursorAvailable.value = data.cursorAvailable;
     bMistralVibeAvailable.value = data.mistralVibeAvailable;
+    bOpenCodeAvailable.value = data.openCodeAvailable;
   } catch {
     bClaudeAvailable.value = false;
     bCursorAvailable.value = false;
     bMistralVibeAvailable.value = false;
+    bOpenCodeAvailable.value = false;
   }
 };
 
@@ -1673,6 +1679,7 @@ onBeforeUnmount(() => {
     :claude-available="bClaudeAvailable"
     :cursor-available="bCursorAvailable"
     :mistral-vibe-available="bMistralVibeAvailable"
+    :open-code-available="bOpenCodeAvailable"
     :existing-tags="sessionTags"
     @create="createSession"
   />
@@ -1684,6 +1691,7 @@ onBeforeUnmount(() => {
     :claude-available="bClaudeAvailable"
     :cursor-available="bCursorAvailable"
     :mistral-vibe-available="bMistralVibeAvailable"
+    :open-code-available="bOpenCodeAvailable"
     @create="createOrchestrator"
   />
 

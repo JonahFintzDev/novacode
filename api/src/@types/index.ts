@@ -3,7 +3,7 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 
 // --------------------------------------------- Types ---------------------------------------------
 
-export type AgentType = 'cursor-agent' | 'claude' | 'mistral-vibe';
+export type AgentType = 'cursor-agent' | 'claude' | 'mistral-vibe' | 'open-code';
 
 export interface SubTask {
   name: string;

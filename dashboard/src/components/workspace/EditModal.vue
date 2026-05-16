@@ -17,6 +17,14 @@ const props = defineProps<{
   existingGroups?: string[];
   /** Tags from other workspaces for suggestions (optional). */
   existingTags?: string[];
+  /** Whether Cursor can be used (authenticated). */
+  cursorAvailable?: boolean;
+  /** Whether Claude can be used (CLI available and token configured). */
+  claudeAvailable?: boolean;
+  /** Whether Mistral Vibe can be used (CLI on PATH and API key configured). */
+  mistralVibeAvailable?: boolean;
+  /** Whether OpenCode can be used (CLI on PATH and ACP server available). */
+  openCodeAvailable?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -49,11 +57,23 @@ interface FormState {
   tags: string[];
 }
 
-const AGENT_OPTIONS: { value: AgentType; label: string }[] = [
-  { value: 'cursor-agent', label: 'Cursor' },
-  { value: 'mistral-vibe', label: 'Mistral Vibe' },
-  { value: 'claude', label: 'Claude' }
-];
+// -------------------------------------------------- Computed --------------------------------------------------
+const AGENT_OPTIONS = computed(() => {
+  const options: { value: AgentType; label: string }[] = [];
+  if (props.cursorAvailable !== false) {
+    options.push({ value: 'cursor-agent', label: 'Cursor' });
+  }
+  if (props.mistralVibeAvailable !== false) {
+    options.push({ value: 'mistral-vibe', label: 'Mistral Vibe' });
+  }
+  if (props.claudeAvailable !== false) {
+    options.push({ value: 'claude', label: 'Claude' });
+  }
+  if (props.openCodeAvailable !== false) {
+    options.push({ value: 'open-code', label: 'OpenCode' });
+  }
+  return options;
+});
 
 // -------------------------------------------------- Refs --------------------------------------------------
 const form = ref<FormState>({

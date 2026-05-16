@@ -47,13 +47,15 @@ function agentClass(agentType: string): string {
   if (agentType === 'claude') return 'agent-claude';
   if (agentType === 'cursor-agent') return 'agent-cursor';
   if (agentType === 'mistral-vibe') return 'agent-vibe';
+  if (agentType === 'open-code') return 'agent-opencode';
   return '';
 }
 
 function agentLabel(agentType: string): string {
   if (agentType === 'cursor-agent') return 'cursor';
   if (agentType === 'mistral-vibe') return 'vibe';
-  return 'claude';
+  if (agentType === 'claude') return 'claude';
+  return 'opencode';
 }
 
 const relFmt = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });

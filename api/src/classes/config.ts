@@ -17,6 +17,7 @@ export const config = {
   port: parseInt(optional('PORT', '3000'), 10),
   cursorCommand: '/root/.local/bin/cursor-agent',
   claudeCommand: 'claude',
+  openCodeCommand: 'open-code',
   /** Cursor ACP server entrypoint. Spawned per prompt turn for ACP communication. */
   get cursorAcpCommand(): string {
     const override = process.env['CURSOR_ACP_COMMAND'];
@@ -34,6 +35,12 @@ export const config = {
     const override = process.env['VIBE_ACP_COMMAND'];
     if (override) return override;
     return existsSync('/root/.local/bin/vibe-acp') ? '/root/.local/bin/vibe-acp' : 'vibe-acp';
+  },
+  /** OpenCode ACP server entrypoint. Spawned per prompt turn for ACP communication. */
+  get openCodeAcpCommand(): string {
+    const override = process.env['OPENCODE_ACP_COMMAND'];
+    if (override) return override;
+    return existsSync('/root/.local/bin/open-code-acp') ? '/root/.local/bin/open-code-acp' : 'open-code-acp';
   },
   configDir: '/config',
   /** Root directory on the host; workspace paths are relative to this. */
@@ -59,6 +66,10 @@ export const config = {
         env[key] = process.env[key]!;
       }
     }
+    // OpenCode home directory
+    if (process.env['OPENCODE_HOME']) {
+      env['OPENCODE_HOME'] = process.env['OPENCODE_HOME'];
+    }
     for (const [k, v] of Object.entries(process.env)) {
       if (k.startsWith('AGENT_ENV_') && v) {
         env[k.slice('AGENT_ENV_'.length)] = v;
@@ -82,6 +93,7 @@ export const config = {
     env['CURSOR_HOME'] = configDir;
     env['VIBE_HOME'] = configDir + '/.vibe';
     env['CLAUDE_CONFIG_DIR'] = configDir;
+    env['OPENCODE_HOME'] = env['OPENCODE_HOME'] || configDir + '/.opencode';
     env['XDG_CONFIG_HOME'] = env['XDG_CONFIG_HOME'] || configDir + '/.config';
 
     // workspace-level git identity overrides take precedence over .gitconfig user section
@@ -189,6 +201,23 @@ export function isCursorAcpAvailable(configDir: string): boolean {
   try {
     const env = { ...process.env, ...config.agentEnv() };
     const result = spawnSync(config.cursorAcpCommand, ['--version'], {
+      encoding: 'utf8',
+      timeout: 5000,
+      cwd: configDir,
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return result.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+/** True when the open-code-acp ACP server binary is on PATH and exits cleanly for --version. */
+export function isOpenCodeAcpAvailable(configDir: string): boolean {
+  try {
+    const env = { ...process.env, ...config.agentEnv() };
+    const result = spawnSync(config.openCodeAcpCommand, ['--version'], {
       encoding: 'utf8',
       timeout: 5000,
       cwd: configDir,

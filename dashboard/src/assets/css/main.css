@@ -42,6 +42,7 @@
   --agent-claude: #d97757;
   --agent-cursor: #7aa2ff;
   --agent-vibe: #7ec994;
+  --agent-opencode: #50c8d6;
 }
 
 *,
@@ -151,6 +152,10 @@ button:disabled {
 .nc-chip.agent-vibe {
   color: var(--agent-vibe);
   border-color: color-mix(in oklab, var(--agent-vibe) 30%, var(--line));
+}
+.nc-chip.agent-opencode {
+  color: var(--agent-opencode);
+  border-color: color-mix(in oklab, var(--agent-opencode) 30%, var(--line));
 }
 .nc-chip.success {
   color: var(--success);

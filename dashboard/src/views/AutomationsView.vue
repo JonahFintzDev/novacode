@@ -127,6 +127,9 @@ function agentTypeLabel(t: AgentType): string {
   if (t === 'mistral-vibe') {
     return 'Mistral Vibe';
   }
+  if (t === 'open-code') {
+    return 'OpenCode';
+  }
   return 'Cursor';
 }
 

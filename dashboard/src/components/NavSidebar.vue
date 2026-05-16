@@ -70,6 +70,7 @@ function agentClass(agentType: string): string {
   if (agentType === 'claude') return 'agent-claude';
   if (agentType === 'cursor-agent') return 'agent-cursor';
   if (agentType === 'mistral-vibe') return 'agent-vibe';
+  if (agentType === 'open-code') return 'agent-opencode';
   return '';
 }
 
@@ -190,7 +191,9 @@ onMounted(() => {
               ? 'cursor'
               : session.agentType === 'mistral-vibe'
                 ? 'vibe'
-                : 'claude'
+                : session.agentType === 'claude'
+                  ? 'claude'
+                  : 'opencode'
           }}</span>
         </template>
       </RouterLink>

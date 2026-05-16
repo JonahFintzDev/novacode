@@ -37,6 +37,10 @@ const bCursorAuthenticated = ref<boolean>(false);
 const bClaudeAuthenticated = ref<boolean>(false);
 const bVibeConfigured = ref<boolean>(false);
 const bHasGitCredentials = ref<boolean>(false);
+const cursorAvailable = ref<boolean>(false);
+const claudeAvailable = ref<boolean>(false);
+const mistralVibeAvailable = ref<boolean>(false);
+const openCodeAvailable = ref<boolean>(false);
 const newGroupNames = ref<string[]>([]);
 const bShowWorkspaceDeleteModal = ref<boolean>(false);
 const deletingWorkspace = ref<Workspace | undefined>(undefined);
@@ -246,11 +250,12 @@ function onWorkspaceContextPick(key: string): void {
 }
 
 const fetchFirstStartStatus = async (): Promise<void> => {
-  const [cursorResult, claudeResult, vibeResult, settingsResult] = await Promise.allSettled([
+  const [cursorResult, claudeResult, vibeResult, settingsResult, agentCapsResult] = await Promise.allSettled([
     agentAuthApi.cursorStatus(),
     agentAuthApi.claudeStatus(),
     settingsApi.getVibeApiKeyStatus(),
-    settingsApi.get()
+    settingsApi.get(),
+    settingsApi.getAgentCapabilities()
   ]);
   if (cursorResult.status === 'fulfilled') {
     bCursorAuthenticated.value = cursorResult.value.data.authenticated;
@@ -265,6 +270,12 @@ const fetchFirstStartStatus = async (): Promise<void> => {
     const name = settingsResult.value.data.gitUserName?.trim() ?? '';
     const email = settingsResult.value.data.gitUserEmail?.trim() ?? '';
     bHasGitCredentials.value = name.length > 0 && email.length > 0;
+  }
+  if (agentCapsResult.status === 'fulfilled') {
+    cursorAvailable.value = agentCapsResult.value.data.cursorAvailable;
+    claudeAvailable.value = agentCapsResult.value.data.claudeAvailable;
+    mistralVibeAvailable.value = agentCapsResult.value.data.mistralVibeAvailable;
+    openCodeAvailable.value = agentCapsResult.value.data.openCodeAvailable;
   }
   bFirstStartCheckDone.value = true;
 };
@@ -367,8 +378,9 @@ onMounted((): void => {
                   'agent-claude': workspace.defaultAgentType === 'claude',
                   'agent-cursor': workspace.defaultAgentType === 'cursor-agent',
                   'agent-vibe': workspace.defaultAgentType === 'mistral-vibe',
+                  'agent-opencode': workspace.defaultAgentType === 'open-code',
                 }">
-                  {{ workspace.defaultAgentType === 'cursor-agent' ? 'cursor' : workspace.defaultAgentType === 'mistral-vibe' ? 'vibe' : 'claude' }}
+                  {{ workspace.defaultAgentType === 'cursor-agent' ? 'cursor' : workspace.defaultAgentType === 'mistral-vibe' ? 'vibe' : workspace.defaultAgentType === 'claude' ? 'claude' : 'opencode' }}
                 </span>
                 <span v-if="workspace.defaultAgentType" class="ws-card__agent-label nc-mono">· default agent</span>
               </div>
@@ -431,6 +443,10 @@ onMounted((): void => {
     :workspace="editingWorkspace"
     :existing-groups="existingGroups"
     :existing-tags="existingTags"
+    :cursor-available="cursorAvailable"
+    :claude-available="claudeAvailable"
+    :mistral-vibe-available="mistralVibeAvailable"
+    :open-code-available="openCodeAvailable"
     @create-group="handleCreateGroup"
     @save="handleSaveWorkspace"
   />

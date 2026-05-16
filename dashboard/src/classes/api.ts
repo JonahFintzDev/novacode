@@ -157,12 +157,14 @@ export const settingsApi = {
       cursorAvailable: boolean;
       claudeAvailable: boolean;
       mistralVibeAvailable: boolean;
+      openCodeAvailable: boolean;
     }>
   > =>
     http.get<{
       cursorAvailable: boolean;
       claudeAvailable: boolean;
       mistralVibeAvailable: boolean;
+      openCodeAvailable: boolean;
     }>('/settings/agent-capabilities'),
 
   getVibeApiKeyStatus: (): ReturnType<typeof http.get<{ configured: boolean }>> =>

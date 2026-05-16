@@ -65,6 +65,7 @@ const isSubmittingSession = ref(false);
 const claudeAvailable = ref(false);
 const cursorAvailable = ref(false);
 const mistralVibeAvailable = ref(false);
+const openCodeAvailable = ref(false);
 
 async function ensureWorkspaceLoaded(): Promise<void> {
   if (store.workspaces.some((w) => w.id === workspaceId.value)) return;
@@ -77,10 +78,12 @@ async function loadAgentCapabilities(): Promise<void> {
     claudeAvailable.value = data.claudeAvailable;
     cursorAvailable.value = data.cursorAvailable;
     mistralVibeAvailable.value = data.mistralVibeAvailable;
+    openCodeAvailable.value = data.openCodeAvailable;
   } catch {
     claudeAvailable.value = false;
     cursorAvailable.value = false;
     mistralVibeAvailable.value = false;
+    openCodeAvailable.value = false;
   }
 }
 
@@ -237,6 +240,7 @@ onUnmounted(() => {
     :claude-available="claudeAvailable"
     :cursor-available="cursorAvailable"
     :mistral-vibe-available="mistralVibeAvailable"
+    :open-code-available="openCodeAvailable"
     :existing-tags="sessionTags"
     @create="createSession"
   />
