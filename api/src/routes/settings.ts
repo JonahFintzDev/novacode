@@ -13,6 +13,7 @@ import {
   writeGlobalGitConfig,
   isClaudeAvailable,
   isVibeCliAvailable,
+  isCodexAcpAvailable,
   readMcpClients,
   writeMcpClients
 } from '../classes/config';
@@ -273,7 +274,8 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
             cursorAvailable: Type.Boolean(),
             claudeAvailable: Type.Boolean(),
             mistralVibeAvailable: Type.Boolean(),
-            openCodeAvailable: Type.Boolean()
+            openCodeAvailable: Type.Boolean(),
+            codexAvailable: Type.Boolean()
           })
         }
       }
@@ -287,11 +289,13 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
       const vibeKeyOk = getVibeApiKeyStatus(config.configDir).configured;
       const vibeCliOk = isVibeCliAvailable(config.configDir);
       const openCodeAvailable = openCodeAuthenticated();
+      const codexAvailable = isCodexAcpAvailable(config.configDir);
       return {
         cursorAvailable,
         claudeAvailable,
         mistralVibeAvailable: vibeCliOk && vibeKeyOk,
-        openCodeAvailable
+        openCodeAvailable,
+        codexAvailable
       };
     }
   );

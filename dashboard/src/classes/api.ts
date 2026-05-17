@@ -161,6 +161,7 @@ export const settingsApi = {
       claudeAvailable: boolean;
       mistralVibeAvailable: boolean;
       openCodeAvailable: boolean;
+      codexAvailable: boolean;
     }>
   > =>
     http.get<{
@@ -168,6 +169,7 @@ export const settingsApi = {
       claudeAvailable: boolean;
       mistralVibeAvailable: boolean;
       openCodeAvailable: boolean;
+      codexAvailable: boolean;
     }>('/settings/agent-capabilities'),
 
   getVibeApiKeyStatus: (): ReturnType<typeof http.get<{ configured: boolean }>> =>
