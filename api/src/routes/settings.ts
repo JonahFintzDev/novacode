@@ -289,7 +289,7 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
       const vibeKeyOk = getVibeApiKeyStatus(config.configDir).configured;
       const vibeCliOk = isVibeCliAvailable(config.configDir);
       const openCodeAvailable = openCodeAuthenticated();
-      const codexAvailable = isCodexAcpAvailable(config.configDir) && codexAuthenticated();
+      const codexAvailable = isCodexAcpAvailable(config.configDir);
       return {
         cursorAvailable,
         claudeAvailable,
